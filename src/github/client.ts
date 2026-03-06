@@ -1,11 +1,14 @@
 import { Octokit } from "octokit";
+import pino, { type Logger } from "pino";
 import type { Issue, PullRequest, CheckRun } from "./types.js";
 
 export class GitHubClient {
   private octokit: Octokit;
+  private logger: Logger;
 
-  constructor(token: string) {
+  constructor(token: string, logger?: Logger) {
     this.octokit = new Octokit({ auth: token });
+    this.logger = (logger ?? pino({ level: "silent" })).child({ module: "github" });
   }
 
   issueKey(owner: string, repo: string, number: number): string {
@@ -22,6 +25,7 @@ export class GitHubClient {
     const { data } = await this.octokit.rest.issues.listForRepo({
       owner, repo, labels: label, state: "open", per_page: 100,
     });
+    this.logger.debug({ owner, repo, label, count: data.length }, "fetched issues");
     return data
       .filter((i) => !i.pull_request)
       .map((i) => ({
@@ -38,16 +42,21 @@ export class GitHubClient {
 
   async addLabel(owner: string, repo: string, number: number, label: string): Promise<void> {
     await this.octokit.rest.issues.addLabels({ owner, repo, issue_number: number, labels: [label] });
+    this.logger.debug({ owner, repo, number, label }, "added label");
   }
 
   async removeLabel(owner: string, repo: string, number: number, label: string): Promise<void> {
     try {
       await this.octokit.rest.issues.removeLabel({ owner, repo, issue_number: number, name: label });
-    } catch { /* label may not exist */ }
+      this.logger.debug({ owner, repo, number, label }, "removed label");
+    } catch {
+      this.logger.debug({ owner, repo, number, label }, "label not present, skipping removal");
+    }
   }
 
   async fetchPRsWithLabel(owner: string, repo: string, label: string): Promise<PullRequest[]> {
     const { data } = await this.octokit.rest.pulls.list({ owner, repo, state: "open", per_page: 100 });
+    this.logger.debug({ owner, repo, label, count: data.length }, "fetched PRs");
     return data
       .filter((pr) => pr.labels.some((l) => l.name === label))
       .map((pr) => ({
@@ -63,6 +72,7 @@ export class GitHubClient {
 
   async fetchCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
     const { data } = await this.octokit.rest.checks.listForRef({ owner, repo, ref });
+    this.logger.debug({ owner, repo, ref, count: data.check_runs.length }, "fetched check runs");
     return data.check_runs.map((cr) => ({
       id: cr.id,
       name: cr.name,

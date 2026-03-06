@@ -56,8 +56,8 @@ program
     const eventsRepo = new RunEventsRepo(db);
     const metricsRepo = new MetricsRepo(db);
     const planningRepo = new PlanningRepo(db);
-    const github = new GitHubClient(token);
-    const workspace = new WorkspaceManager(config.workspace.baseDir);
+    const github = new GitHubClient(token, logger);
+    const workspace = new WorkspaceManager(config.workspace.baseDir, logger);
     const sseHub = new SSEHub();
 
     const orchestrator = new Orchestrator(config, github, {

@@ -1,9 +1,13 @@
 import { mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import pino, { type Logger } from "pino";
 
 export class WorkspaceManager {
-  constructor(private baseDir: string) {
+  private logger: Logger;
+
+  constructor(private baseDir: string, logger?: Logger) {
     mkdirSync(baseDir, { recursive: true });
+    this.logger = (logger ?? pino({ level: "silent" })).child({ module: "workspace" });
   }
 
   ensure(issueKey: string): string {
@@ -11,6 +15,7 @@ export class WorkspaceManager {
     const dir = join(this.baseDir, dirName);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
+      this.logger.info({ issueKey, dir }, "workspace created");
     }
     return dir;
   }
