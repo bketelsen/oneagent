@@ -70,6 +70,17 @@ export class GitHubClient {
       }));
   }
 
+  private extractLinkedIssueNumbers(body: string | null | undefined): Set<number> {
+    if (!body) return new Set();
+    const pattern = /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#(\d+)/gi;
+    const numbers = new Set<number>();
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(body)) !== null) {
+      numbers.add(parseInt(match[1], 10));
+    }
+    return numbers;
+  }
+
   async fetchCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
     const { data } = await this.octokit.rest.checks.listForRef({ owner, repo, ref });
     this.logger.debug({ owner, repo, ref, count: data.check_runs.length }, "fetched check runs");
