@@ -18,7 +18,7 @@ import { WorkspaceManager } from "./workspace/manager.js";
 import { SSEHub } from "./web/sse.js";
 import { createApp } from "./web/app.js";
 import { serve } from "@hono/node-server";
-import pino from "pino";
+import { createLogger } from "./logger.js";
 
 const program = new Command();
 program.name("oneagent").description("AI agent orchestrator for GitHub issues").version("0.1.0");
@@ -30,9 +30,9 @@ program
   .option("--debug", "enable debug logging")
   .option("--log <path>", "log file path")
   .action(async (opts) => {
-    const logger = pino({
+    const logger = createLogger({
       level: opts.debug ? "debug" : "info",
-      ...(opts.log ? { transport: { target: "pino/file", options: { destination: opts.log } } } : {}),
+      logFile: opts.log,
     });
 
     if (!existsSync(opts.config)) {
