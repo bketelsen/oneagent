@@ -108,6 +108,7 @@ program
           },
         },
         getConfig: () => config,
+        logger,
       });
 
       serve({ fetch: app.fetch, port: config.web.port }, (info) => {
