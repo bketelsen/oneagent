@@ -24,7 +24,7 @@ export interface OrchestratorDeps {
   eventsRepo?: RunEventsRepo;
   metricsRepo?: MetricsRepo;
   workspace?: WorkspaceManager;
-  logger?: Logger;
+  logger: Logger;
 }
 
 export class Orchestrator {
@@ -35,11 +35,12 @@ export class Orchestrator {
   private agentMap: Record<string, AgentDef>;
   private pollTimer?: ReturnType<typeof setInterval>;
   private reconcileTimer?: ReturnType<typeof setInterval>;
+  private logger: Logger;
 
   constructor(
     private config: Config,
     private github: GitHubClient,
-    private deps: Partial<OrchestratorDeps> = {},
+    private deps: OrchestratorDeps,
   ) {
     this.retryQueue = new RetryQueue(
       config.agent.retryBaseDelay,
@@ -47,15 +48,22 @@ export class Orchestrator {
     );
     const graph = buildAgentGraph();
     this.agentMap = Object.fromEntries(graph);
+    this.logger = deps.logger.child({ module: "orchestrator" });
   }
 
   start(): void {
+    this.logger.info({
+      pollInterval: this.config.poll.interval,
+      reconcileInterval: this.config.poll.reconcileInterval,
+    }, "orchestrator started");
     this.pollTimer = setInterval(() => this.tick(), this.config.poll.interval);
     this.reconcileTimer = setInterval(() => this.reconcile(), this.config.poll.reconcileInterval);
     this.tick();
   }
 
   stop(): void {
+    const activeCount = this.state.activeCount();
+    this.logger.info({ activeCount }, "orchestrator stopping");
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
     for (const [, entry] of this.state.running()) {
@@ -73,10 +81,14 @@ export class Orchestrator {
     }
 
     const retryKeys = this.retryQueue.due();
+    this.logger.info({ issueCount: allIssues.length, retryCount: retryKeys.length }, "poll tick");
 
     for (const issue of allIssues) {
       if (this.state.isRunning(issue.key)) continue;
-      if (this.state.activeCount() >= this.config.concurrency.max) break;
+      if (this.state.activeCount() >= this.config.concurrency.max) {
+        this.logger.debug({ max: this.config.concurrency.max }, "concurrency limit reached");
+        break;
+      }
       if (issue.hasOpenPR) continue;
 
       await this.dispatch(issue);
@@ -84,7 +96,10 @@ export class Orchestrator {
 
     for (const key of retryKeys) {
       if (this.state.isRunning(key)) continue;
-      if (this.state.activeCount() >= this.config.concurrency.max) break;
+      if (this.state.activeCount() >= this.config.concurrency.max) {
+        this.logger.debug({ max: this.config.concurrency.max }, "concurrency limit reached");
+        break;
+      }
       this.retryQueue.dequeue(key);
       const parsed = this.github.parseIssueKey(key);
       if (!parsed) continue;
@@ -109,6 +124,7 @@ export class Orchestrator {
     };
 
     this.state.add(issue.key, entry);
+    this.logger.info({ runId, issueKey: issue.key, repo: `${issue.owner}/${issue.repo}`, issue: issue.number }, "dispatching agent");
     await this.github.addLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
 
     this.deps.runsRepo?.insert({
@@ -130,7 +146,7 @@ export class Orchestrator {
 
     // Run agent in background — don't await
     this.executeRun(runId, issue, prompt, abortController, workDir).catch((err) => {
-      this.deps.logger?.error({ err, runId, issueKey: issue.key }, "unhandled run error");
+      this.logger.error({ err, runId, issueKey: issue.key }, "unhandled run error");
     });
   }
 
@@ -142,7 +158,7 @@ export class Orchestrator {
     workDir?: string,
   ): Promise<void> {
     const stallDetector = createStallDetector(this.config.agent.stallTimeout, () => {
-      this.deps.logger?.warn({ runId, issueKey: issue.key }, "agent stalled, aborting");
+      this.logger.warn({ runId, issueKey: issue.key }, "agent stalled, aborting");
       abortController.abort();
     });
 
@@ -181,9 +197,11 @@ export class Orchestrator {
       stallDetector.stop();
 
       // Mark completed
+      const durationMs = Date.now() - (this.state.get(issue.key)?.startedAt.getTime() ?? Date.now());
       this.state.remove(issue.key);
       this.deps.runsRepo?.updateStatus(runId, "completed", new Date().toISOString());
       await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
+      this.logger.info({ runId, issueKey: issue.key, durationMs, tokensIn: totalInputTokens, tokensOut: totalOutputTokens }, "agent run completed");
 
       if (totalInputTokens > 0 || totalOutputTokens > 0) {
         this.deps.metricsRepo?.record({
@@ -191,7 +209,7 @@ export class Orchestrator {
           provider: this.config.agent.provider,
           tokensIn: totalInputTokens,
           tokensOut: totalOutputTokens,
-          durationMs: Date.now() - (this.state.get(issue.key)?.startedAt.getTime() ?? Date.now()),
+          durationMs,
         });
       }
 
@@ -206,15 +224,15 @@ export class Orchestrator {
 
       const errorMsg = err instanceof Error ? err.message : String(err);
       this.deps.runsRepo?.updateStatus(runId, "failed", new Date().toISOString(), errorMsg);
-      this.deps.logger?.error({ err, runId, issueKey: issue.key }, "agent run failed");
+      this.logger.error({ err, runId, issueKey: issue.key }, "agent run failed");
 
       if (this.retryQueue.canRetry(this.retryQueue.getRetryCount(issue.key))) {
         this.retryQueue.enqueue(issue.key, this.retryQueue.getRetryCount(issue.key));
-        this.deps.logger?.info({ issueKey: issue.key }, "enqueued for retry");
+        this.logger.info({ issueKey: issue.key }, "enqueued for retry");
       } else {
         await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
         await this.github.addLabel(issue.owner, issue.repo, issue.number, this.config.labels.failed);
-        this.deps.logger?.warn({ issueKey: issue.key }, "retries exhausted, marking failed");
+        this.logger.warn({ issueKey: issue.key }, "retries exhausted, marking failed");
       }
 
       this.sseHub.emit("sse", {
@@ -225,6 +243,7 @@ export class Orchestrator {
   }
 
   async reconcile(): Promise<void> {
+    this.logger.debug({ activeRuns: this.state.activeCount() }, "reconcile check");
     for (const [key, entry] of this.state.running()) {
       const parsed = this.github.parseIssueKey(key);
       if (!parsed) continue;
@@ -232,7 +251,7 @@ export class Orchestrator {
       // Check for stale runs based on lastActivity
       const staleDuration = Date.now() - entry.lastActivity.getTime();
       if (staleDuration > this.config.agent.stallTimeout * 2) {
-        this.deps.logger?.warn({ issueKey: key, staleDuration }, "reconcile: aborting stale run");
+        this.logger.warn({ issueKey: key, staleDuration }, "reconcile: aborting stale run");
         entry.abortController?.abort();
       }
     }

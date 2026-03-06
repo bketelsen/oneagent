@@ -13,6 +13,14 @@ const mockGitHub = {
   },
 };
 
+const mockLogger = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  child: vi.fn().mockReturnThis(),
+};
+
 const mockConfig = {
   github: { repos: [{ owner: "o", repo: "r", labels: ["oneagent"] }] },
   agent: { provider: "claude-code", stallTimeout: 300000, maxRetries: 3, retryBaseDelay: 60000 },
@@ -26,12 +34,12 @@ const mockConfig = {
 
 describe("Orchestrator", () => {
   it("can be constructed", () => {
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
     expect(orch).toBeDefined();
   });
 
   it("tick fetches issues from all repos", async () => {
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
     await orch.tick();
     expect(mockGitHub.fetchIssues).toHaveBeenCalledWith("o", "r", "oneagent");
   });
