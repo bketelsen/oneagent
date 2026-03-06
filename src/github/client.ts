@@ -22,10 +22,23 @@ export class GitHubClient {
   }
 
   async fetchIssues(owner: string, repo: string, label: string): Promise<Issue[]> {
-    const { data } = await this.octokit.rest.issues.listForRepo({
-      owner, repo, labels: label, state: "open", per_page: 100,
-    });
-    this.logger.debug({ owner, repo, label, count: data.length }, "fetched issues");
+    const [{ data }, { data: prs }] = await Promise.all([
+      this.octokit.rest.issues.listForRepo({
+        owner, repo, labels: label, state: "open", per_page: 100,
+      }),
+      this.octokit.rest.pulls.list({
+        owner, repo, state: "open", per_page: 100,
+      }),
+    ]);
+    this.logger.debug({ owner, repo, label, issueCount: data.length, prCount: prs.length }, "fetched issues and PRs");
+
+    const linkedIssues = new Set<number>();
+    for (const pr of prs) {
+      for (const num of this.extractLinkedIssueNumbers(pr.body)) {
+        linkedIssues.add(num);
+      }
+    }
+
     return data
       .filter((i) => !i.pull_request)
       .map((i) => ({
@@ -36,7 +49,7 @@ export class GitHubClient {
         body: i.body ?? "",
         labels: i.labels.map((l) => (typeof l === "string" ? l : l.name ?? "")),
         state: i.state,
-        hasOpenPR: false,
+        hasOpenPR: linkedIssues.has(i.number),
       }));
   }
 

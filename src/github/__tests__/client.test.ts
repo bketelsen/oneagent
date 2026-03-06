@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { GitHubClient } from "../client.js";
 
 describe("GitHubClient", () => {
@@ -55,5 +55,75 @@ describe("extractLinkedIssueNumbers", () => {
 
   it("handles past tense keywords", () => {
     expect(extract("Fixed #5, resolved #6, closed #7")).toEqual(new Set([5, 6, 7]));
+  });
+});
+
+describe("fetchIssues hasOpenPR population", () => {
+  function createMockClient(issues: any[], prs: any[]) {
+    const client = new GitHubClient("fake-token");
+    // Mock the octokit instance
+    (client as any).octokit = {
+      rest: {
+        issues: {
+          listForRepo: vi.fn().mockResolvedValue({ data: issues }),
+        },
+        pulls: {
+          list: vi.fn().mockResolvedValue({ data: prs }),
+        },
+      },
+    };
+    return client;
+  }
+
+  it("sets hasOpenPR true when a PR body references the issue", async () => {
+    const client = createMockClient(
+      [{ number: 26, title: "Add feature", body: "desc", state: "open", labels: [] }],
+      [{ number: 29, title: "Fix", body: "Fixes #26", state: "open", labels: [], head: { ref: "fix-26" } }],
+    );
+    const issues = await client.fetchIssues("owner", "repo", "oneagent");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].hasOpenPR).toBe(true);
+  });
+
+  it("sets hasOpenPR false when no PR references the issue", async () => {
+    const client = createMockClient(
+      [{ number: 26, title: "Add feature", body: "desc", state: "open", labels: [] }],
+      [{ number: 30, title: "Unrelated", body: "Some other work", state: "open", labels: [], head: { ref: "other" } }],
+    );
+    const issues = await client.fetchIssues("owner", "repo", "oneagent");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].hasOpenPR).toBe(false);
+  });
+
+  it("sets hasOpenPR false when there are no open PRs", async () => {
+    const client = createMockClient(
+      [{ number: 26, title: "Add feature", body: "desc", state: "open", labels: [] }],
+      [],
+    );
+    const issues = await client.fetchIssues("owner", "repo", "oneagent");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].hasOpenPR).toBe(false);
+  });
+
+  it("handles PR with null body", async () => {
+    const client = createMockClient(
+      [{ number: 26, title: "Add feature", body: "desc", state: "open", labels: [] }],
+      [{ number: 29, title: "Fix", body: null, state: "open", labels: [], head: { ref: "fix-26" } }],
+    );
+    const issues = await client.fetchIssues("owner", "repo", "oneagent");
+    expect(issues[0].hasOpenPR).toBe(false);
+  });
+
+  it("filters out pull_request items from issues list", async () => {
+    const client = createMockClient(
+      [
+        { number: 26, title: "Issue", body: "desc", state: "open", labels: [], pull_request: undefined },
+        { number: 29, title: "PR as issue", body: "desc", state: "open", labels: [], pull_request: { url: "..." } },
+      ],
+      [],
+    );
+    const issues = await client.fetchIssues("owner", "repo", "oneagent");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].number).toBe(26);
   });
 });
