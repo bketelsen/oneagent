@@ -1,28 +1,52 @@
 import { EventEmitter } from "node:events";
+import { run } from "one-agent-sdk";
+import type { StreamChunk, RunConfig } from "one-agent-sdk";
 import type { Config } from "../config/schema.js";
 import type { GitHubClient } from "../github/client.js";
 import type { Issue } from "../github/types.js";
+import type { RunsRepo } from "../db/runs.js";
+import type { RunEventsRepo } from "../db/run-events.js";
+import type { MetricsRepo } from "../db/metrics.js";
 import { RunState, type RunEntry } from "./state.js";
 import { RetryQueue } from "./retry.js";
 import { Dispatcher } from "./dispatcher.js";
+import { buildAgentGraph, type AgentDef } from "../agents/graph.js";
+import { coderAgent } from "../agents/coder.js";
+import { createStallDetector } from "../middleware/stall-detector.js";
+import { WorkspaceManager } from "../workspace/manager.js";
 import { ulid } from "ulid";
+import type { Logger } from "pino";
+
+export interface OrchestratorDeps {
+  config: Config;
+  github: GitHubClient;
+  runsRepo?: RunsRepo;
+  eventsRepo?: RunEventsRepo;
+  metricsRepo?: MetricsRepo;
+  workspace?: WorkspaceManager;
+  logger?: Logger;
+}
 
 export class Orchestrator {
   readonly state = new RunState();
   readonly retryQueue: RetryQueue;
   readonly sseHub = new EventEmitter();
   private dispatcher = new Dispatcher();
+  private agentMap: Record<string, AgentDef>;
   private pollTimer?: ReturnType<typeof setInterval>;
   private reconcileTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     private config: Config,
     private github: GitHubClient,
+    private deps: Partial<OrchestratorDeps> = {},
   ) {
     this.retryQueue = new RetryQueue(
       config.agent.retryBaseDelay,
       config.agent.maxRetries,
     );
+    const graph = buildAgentGraph();
+    this.agentMap = Object.fromEntries(graph);
   }
 
   start(): void {
@@ -87,19 +111,130 @@ export class Orchestrator {
     this.state.add(issue.key, entry);
     await this.github.addLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
 
+    this.deps.runsRepo?.insert({
+      id: runId,
+      issueKey: issue.key,
+      provider: entry.provider,
+      status: "running",
+      startedAt: entry.startedAt.toISOString(),
+      retryCount: entry.retryCount,
+    });
+
     this.sseHub.emit("sse", {
       type: "agent:started",
       data: { runId, issueKey: issue.key, provider: entry.provider },
     });
 
-    // Agent execution will be wired in the integration task
+    const prompt = this.dispatcher.buildPrompt(issue);
+    const workDir = this.deps.workspace?.ensure(issue.key);
+
+    // Run agent in background — don't await
+    this.executeRun(runId, issue, prompt, abortController, workDir).catch((err) => {
+      this.deps.logger?.error({ err, runId, issueKey: issue.key }, "unhandled run error");
+    });
+  }
+
+  private async executeRun(
+    runId: string,
+    issue: Issue,
+    prompt: string,
+    abortController: AbortController,
+    workDir?: string,
+  ): Promise<void> {
+    const stallDetector = createStallDetector(this.config.agent.stallTimeout, () => {
+      this.deps.logger?.warn({ runId, issueKey: issue.key }, "agent stalled, aborting");
+      abortController.abort();
+    });
+
+    try {
+      const runConfig: RunConfig = {
+        provider: this.config.agent.provider as any,
+        agent: coderAgent as any,
+        agents: this.agentMap as any,
+        workDir,
+        signal: abortController.signal,
+      };
+
+      const agentRun = await run(prompt, runConfig);
+      stallDetector.start();
+
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+
+      for await (const chunk of agentRun.stream) {
+        stallDetector.activity();
+        this.state.updateActivity(issue.key);
+
+        this.sseHub.emit("sse", {
+          type: `agent:${chunk.type}`,
+          data: { runId, ...chunk },
+        });
+
+        this.deps.eventsRepo?.insert(runId, chunk.type, chunk as unknown as Record<string, unknown>);
+
+        if (chunk.type === "done" && chunk.usage) {
+          totalInputTokens += chunk.usage.inputTokens;
+          totalOutputTokens += chunk.usage.outputTokens;
+        }
+      }
+
+      stallDetector.stop();
+
+      // Mark completed
+      this.state.remove(issue.key);
+      this.deps.runsRepo?.updateStatus(runId, "completed", new Date().toISOString());
+      await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
+
+      if (totalInputTokens > 0 || totalOutputTokens > 0) {
+        this.deps.metricsRepo?.record({
+          runId,
+          provider: this.config.agent.provider,
+          tokensIn: totalInputTokens,
+          tokensOut: totalOutputTokens,
+          durationMs: Date.now() - (this.state.get(issue.key)?.startedAt.getTime() ?? Date.now()),
+        });
+      }
+
+      this.sseHub.emit("sse", {
+        type: "agent:completed",
+        data: { runId, issueKey: issue.key },
+      });
+
+    } catch (err) {
+      stallDetector.stop();
+      this.state.remove(issue.key);
+
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.deps.runsRepo?.updateStatus(runId, "failed", new Date().toISOString(), errorMsg);
+      this.deps.logger?.error({ err, runId, issueKey: issue.key }, "agent run failed");
+
+      if (this.retryQueue.canRetry(this.retryQueue.getRetryCount(issue.key))) {
+        this.retryQueue.enqueue(issue.key, this.retryQueue.getRetryCount(issue.key));
+        this.deps.logger?.info({ issueKey: issue.key }, "enqueued for retry");
+      } else {
+        await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
+        await this.github.addLabel(issue.owner, issue.repo, issue.number, this.config.labels.failed);
+        this.deps.logger?.warn({ issueKey: issue.key }, "retries exhausted, marking failed");
+      }
+
+      this.sseHub.emit("sse", {
+        type: "agent:failed",
+        data: { runId, issueKey: issue.key, error: errorMsg },
+      });
+    }
   }
 
   async reconcile(): Promise<void> {
-    for (const [key] of this.state.running()) {
+    for (const [key, entry] of this.state.running()) {
       const parsed = this.github.parseIssueKey(key);
       if (!parsed) continue;
-      // Full reconciliation added in integration task
+
+      // Check for stale runs based on lastActivity
+      const staleDuration = Date.now() - entry.lastActivity.getTime();
+      if (staleDuration > this.config.agent.stallTimeout * 2) {
+        this.deps.logger?.warn({ issueKey: key, staleDuration }, "reconcile: aborting stale run");
+        entry.abortController?.abort();
+      }
     }
   }
 }
