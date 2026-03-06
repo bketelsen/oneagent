@@ -1,0 +1,22 @@
+# oneagent.example.yaml
+github:
+  # token: ${GITHUB_TOKEN}  # or set GITHUB_TOKEN env var
+  repos:
+    - owner: your-org
+      repo: your-repo
+      labels: [oneagent]
+
+agent:
+  provider: claude-code  # claude-code | codex | kimi-cli
+  stallTimeout: 300000
+  maxRetries: 3
+
+concurrency:
+  max: 3
+
+poll:
+  interval: 30000
+
+web:
+  port: 3000
+  enabled: true
