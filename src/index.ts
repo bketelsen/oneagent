@@ -56,7 +56,9 @@ program
     const workspace = new WorkspaceManager(config.workspace.baseDir);
     const sseHub = new SSEHub();
 
-    const orchestrator = new Orchestrator(config, github);
+    const orchestrator = new Orchestrator(config, github, {
+      config, github, runsRepo, eventsRepo, metricsRepo, workspace, logger,
+    });
 
     if (opts.dryRun) {
       logger.info("Dry run — fetching eligible issues...");
@@ -65,7 +67,7 @@ program
     }
 
     if (config.web.enabled) {
-      const app = createApp({
+      const appCtx = {
         sseHub,
         onRefresh: () => orchestrator.tick(),
         getState: () => ({
@@ -77,6 +79,31 @@ program
           retryQueue: [],
           metrics: metricsRepo.totals(),
         }),
+      };
+
+      const app = createApp({
+        app: appCtx,
+        sprint: {
+          getBoard: async () => ({ todo: [], inProgress: [], inReview: [], done: [] }),
+        },
+        issues: {
+          getRunEvents: (issueKey) => {
+            const runs = runsRepo.listByIssue(issueKey);
+            if (runs.length === 0) return [];
+            return eventsRepo.listByRun(runs[0].id);
+          },
+          getRunHistory: (issueKey) =>
+            runsRepo.listByIssue(issueKey).map((r) => ({
+              id: r.id, status: r.status, startedAt: r.startedAt, provider: r.provider,
+            })),
+        },
+        planning: {
+          planningRepo,
+          onChat: async function* (_sessionId: string, _message: string) {
+            yield "Planning agent not yet connected";
+          },
+        },
+        getConfig: () => config,
       });
 
       serve({ fetch: app.fetch, port: config.web.port }, (info) => {
