@@ -5,7 +5,12 @@ import { reviewerAgent } from "./skills/reviewer.js";
 import { prWorkflowAgent } from "./skills/pr-workflow.js";
 import { plannerAgent } from "./planner.js";
 
-export type AgentDef = { name: string; handoffs?: string[]; [key: string]: unknown };
+export interface AgentDef {
+  name: string;
+  description: string;
+  prompt: string;
+  handoffs?: string[];
+}
 
 export function buildAgentGraph(): Map<string, AgentDef> {
   const agents: AgentDef[] = [
