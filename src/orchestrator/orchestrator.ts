@@ -89,7 +89,10 @@ export class Orchestrator {
         this.logger.debug({ max: this.config.concurrency.max }, "concurrency limit reached");
         break;
       }
-      if (issue.hasOpenPR) continue;
+      if (issue.hasOpenPR) {
+        this.logger.debug({ issueKey: issue.key }, "skipping issue with open PR");
+        continue;
+      }
 
       await this.dispatch(issue);
     }
