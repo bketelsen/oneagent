@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { config as loadDotenv } from "dotenv";
+loadDotenv({ path: ".env.local" });
+loadDotenv({ path: ".env" });
+
 import { Command } from "commander";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { loadConfigFromString } from "./config/loader.js";

@@ -1,0 +1,21 @@
+github:
+  token: $(gh auth token)
+  repos:
+    - owner: bketelsen
+      repo: gopilot-test-target
+      labels: [oneagent]
+
+agent:
+  provider: claude-code
+  stallTimeout: 300000
+  maxRetries: 1
+
+concurrency:
+  max: 1
+
+poll:
+  interval: 30000
+
+web:
+  port: 3000
+  enabled: true

@@ -32,6 +32,19 @@ github:
     delete process.env.TEST_TOKEN;
   });
 
+  it("interpolates shell commands", () => {
+    const yaml = `
+github:
+  token: $(echo shelltoken)
+  repos:
+    - owner: test
+      repo: repo
+      labels: [oneagent]
+`;
+    const config = loadConfigFromString(yaml);
+    expect(config.github.token).toBe("shelltoken");
+  });
+
   it("throws on invalid config", () => {
     expect(() => loadConfigFromString("github: {}")).toThrow();
   });
