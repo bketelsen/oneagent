@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { SSEHub } from "../sse.js";
+import type { DurationStats, StatusCounts } from "../../db/runs.js";
 
 export interface DashboardRun {
   id: string;
@@ -21,6 +22,9 @@ export interface AppContext {
     metrics: { tokensIn: number; tokensOut: number; runs: number };
   };
   getRecentRuns?: () => DashboardRun[];
+  getDurationStats?: () => DurationStats;
+  getStatusCounts?: () => StatusCounts;
+  getTotalTokens?: () => { tokensIn: number; tokensOut: number; runs: number };
 }
 
 export function apiRoutes(ctx: AppContext): Hono {
@@ -45,6 +49,27 @@ export function apiRoutes(ctx: AppContext): Hono {
       });
       unsub();
     });
+  });
+
+  api.get("/metrics", (c) => {
+    const duration = ctx.getDurationStats?.() ?? {
+      avgDurationMs: 0,
+      minDurationMs: 0,
+      maxDurationMs: 0,
+      totalRuns: 0,
+    };
+    const tokens = ctx.getTotalTokens?.() ?? {
+      tokensIn: 0,
+      tokensOut: 0,
+      runs: 0,
+    };
+    const runs = ctx.getStatusCounts?.() ?? {
+      total: 0,
+      completed: 0,
+      failed: 0,
+      running: 0,
+    };
+    return c.json({ duration, tokens, runs });
   });
 
   return api;

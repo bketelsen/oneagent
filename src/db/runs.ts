@@ -21,6 +21,13 @@ export interface DurationStats {
   totalRuns: number;
 }
 
+export interface StatusCounts {
+  total: number;
+  completed: number;
+  failed: number;
+  running: number;
+}
+
 export class RunsRepo {
   constructor(private db: Database.Database) {}
 
@@ -58,6 +65,23 @@ export class RunsRepo {
       minDurationMs: row.min_duration,
       maxDurationMs: row.max_duration,
       totalRuns: row.total_runs,
+    };
+  }
+
+  getStatusCounts(): StatusCounts {
+    const row = this.db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+        COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed,
+        COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) as running
+      FROM runs
+    `).get() as any;
+    return {
+      total: row.total,
+      completed: row.completed,
+      failed: row.failed,
+      running: row.running,
     };
   }
 
