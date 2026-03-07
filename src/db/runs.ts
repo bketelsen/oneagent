@@ -29,6 +29,14 @@ export class RunsRepo {
     `).run(status, finishedAt ?? null, error ?? null, id);
   }
 
+  completeRun(id: string, status: string, finishedAt: string, error?: string): void {
+    const run = this.getById(id);
+    const durationMs = run ? Date.now() - new Date(run.startedAt).getTime() : null;
+    this.db.prepare(`
+      UPDATE runs SET status = ?, finished_at = ?, error = ?, duration_ms = ? WHERE id = ?
+    `).run(status, finishedAt, error ?? null, durationMs, id);
+  }
+
   getById(id: string): RunRow | undefined {
     const row = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as any;
     return row ? this.mapRow(row) : undefined;

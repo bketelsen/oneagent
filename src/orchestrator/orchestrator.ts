@@ -206,7 +206,7 @@ export class Orchestrator {
       // Mark completed
       const durationMs = Date.now() - (this.state.get(issue.key)?.startedAt.getTime() ?? Date.now());
       this.state.remove(issue.key);
-      this.deps.runsRepo?.updateStatus(runId, "completed", new Date().toISOString());
+      this.deps.runsRepo?.completeRun(runId, "completed", new Date().toISOString());
       await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
       this.logger.info({ runId, issueKey: issue.key, durationMs, tokensIn: totalInputTokens, tokensOut: totalOutputTokens }, "agent run completed");
 
@@ -230,7 +230,7 @@ export class Orchestrator {
       this.state.remove(issue.key);
 
       const errorMsg = err instanceof Error ? err.message : String(err);
-      this.deps.runsRepo?.updateStatus(runId, "failed", new Date().toISOString(), errorMsg);
+      this.deps.runsRepo?.completeRun(runId, "failed", new Date().toISOString(), errorMsg);
       this.logger.error({ err, runId, issueKey: issue.key }, "agent run failed");
 
       if (this.retryQueue.canRetry(this.retryQueue.getRetryCount(issue.key))) {
