@@ -17,11 +17,20 @@ export const Layout: FC<PropsWithChildren<{ title: string }>> = ({ title, childr
       </nav>
       <main class="p-6">{children}</main>
       <script dangerouslySetInnerHTML={{ __html: `
-        const es = new EventSource('/api/v1/events');
-        es.onmessage = (e) => {
-          const event = JSON.parse(e.data);
-          document.dispatchEvent(new CustomEvent('sse', { detail: event }));
-        };
+        (function() {
+          var es = new EventSource('/api/v1/events');
+          var eventTypes = [
+            'agent:text', 'agent:tool_call', 'agent:tool_result',
+            'agent:handoff', 'agent:error', 'agent:done',
+            'agent:started', 'agent:completed', 'agent:failed'
+          ];
+          eventTypes.forEach(function(eventType) {
+            es.addEventListener(eventType, function(e) {
+              var data = JSON.parse(e.data);
+              document.dispatchEvent(new CustomEvent('sse', { detail: { type: eventType, ...data } }));
+            });
+          });
+        })();
       `}} />
     </body>
   </html>
