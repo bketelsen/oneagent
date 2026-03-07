@@ -1,5 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { defineTool } from "one-agent-sdk";
+import { z } from "zod";
 import { parseFrontmatter } from "./parse-frontmatter.js";
 
 const INSTRUCTION_FILES = [
@@ -45,3 +47,25 @@ export function discoverCustomSkills(workingDir: string): string {
 
   return sections.join("\n\n");
 }
+
+export function discoverRepoContext(workingDir: string): string {
+  const instructions = discoverInstructionFiles(workingDir);
+  const skills = discoverCustomSkills(workingDir);
+
+  const parts = [instructions, skills].filter(Boolean);
+  if (parts.length === 0) return "No project-specific instructions or skills found.";
+
+  return parts.join("\n\n");
+}
+
+export const discoverRepoContextTool = defineTool({
+  name: "discover_repo_context",
+  description:
+    "Scan the repository for project-specific instructions (CLAUDE.md, AGENTS.md, copilot instructions, .cursorrules) and custom skills (.oneagent/skills/*.md). Call this after entering the repository.",
+  parameters: z.object({
+    workingDir: z.string().describe("Absolute path to the repository root"),
+  }),
+  handler: async ({ workingDir }) => {
+    return discoverRepoContext(workingDir);
+  },
+});

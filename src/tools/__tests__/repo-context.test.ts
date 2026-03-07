@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { discoverInstructionFiles, discoverCustomSkills } from "../repo-context.js";
+import { discoverInstructionFiles, discoverCustomSkills, discoverRepoContext } from "../repo-context.js";
 
 describe("discoverInstructionFiles", () => {
   let tempDir: string;
@@ -120,5 +120,60 @@ describe("discoverCustomSkills", () => {
   it("returns empty string when .oneagent/skills does not exist", () => {
     const result = discoverCustomSkills(tempDir);
     expect(result).toBe("");
+  });
+});
+
+describe("discoverRepoContext", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "repo-full-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("combines instruction files and skills", () => {
+    writeFileSync(join(tempDir, "CLAUDE.md"), "Claude stuff.");
+    const skillsDir = join(tempDir, ".oneagent", "skills");
+    mkdirSync(skillsDir, { recursive: true });
+    writeFileSync(join(skillsDir, "test.md"), `---
+name: test-skill
+description: Test desc
+---
+
+Skill body.`);
+    const result = discoverRepoContext(tempDir);
+    expect(result).toContain("from CLAUDE.md");
+    expect(result).toContain("Claude stuff.");
+    expect(result).toContain("## Custom Skill: test-skill");
+    expect(result).toContain("Skill body.");
+  });
+
+  it("returns message when nothing found", () => {
+    const result = discoverRepoContext(tempDir);
+    expect(result).toBe("No project-specific instructions or skills found.");
+  });
+
+  it("works with only instruction files", () => {
+    writeFileSync(join(tempDir, "AGENTS.md"), "Agent rules.");
+    const result = discoverRepoContext(tempDir);
+    expect(result).toContain("from AGENTS.md");
+    expect(result).not.toContain("Custom Skill");
+  });
+
+  it("works with only skills", () => {
+    const skillsDir = join(tempDir, ".oneagent", "skills");
+    mkdirSync(skillsDir, { recursive: true });
+    writeFileSync(join(skillsDir, "only.md"), `---
+name: only-skill
+description: The only one
+---
+
+Only skill body.`);
+    const result = discoverRepoContext(tempDir);
+    expect(result).not.toContain("Repository Instructions");
+    expect(result).toContain("## Custom Skill: only-skill");
   });
 });
