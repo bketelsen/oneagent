@@ -196,6 +196,70 @@ describe("fetchIssues OR logic with multiple labels", () => {
   });
 });
 
+describe("parseDependencies", () => {
+  const client = new GitHubClient("fake-token");
+
+  it("parses 'Depends on #N'", () => {
+    expect(client.parseDependencies("Depends on #5")).toEqual([5]);
+  });
+
+  it("parses 'Blocked by #N'", () => {
+    expect(client.parseDependencies("Blocked by #10")).toEqual([10]);
+  });
+
+  it("parses 'Requires #N'", () => {
+    expect(client.parseDependencies("Requires #3")).toEqual([3]);
+  });
+
+  it("is case-insensitive", () => {
+    expect(client.parseDependencies("DEPENDS ON #7")).toEqual([7]);
+    expect(client.parseDependencies("blocked BY #8")).toEqual([8]);
+  });
+
+  it("parses multiple dependencies", () => {
+    expect(client.parseDependencies("Depends on #1\nBlocked by #2\nRequires #3")).toEqual([1, 2, 3]);
+  });
+
+  it("deduplicates dependency numbers", () => {
+    expect(client.parseDependencies("Depends on #5\nBlocked by #5")).toEqual([5]);
+  });
+
+  it("returns empty array for null/undefined body", () => {
+    expect(client.parseDependencies(null)).toEqual([]);
+    expect(client.parseDependencies(undefined)).toEqual([]);
+  });
+
+  it("returns empty array when no dependency markers found", () => {
+    expect(client.parseDependencies("This is a regular issue body")).toEqual([]);
+  });
+});
+
+describe("isIssueClosed", () => {
+  it("returns true when issue state is closed", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        issues: {
+          get: vi.fn().mockResolvedValue({ data: { state: "closed" } }),
+        },
+      },
+    };
+    expect(await client.isIssueClosed("owner", "repo", 1)).toBe(true);
+  });
+
+  it("returns false when issue state is open", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        issues: {
+          get: vi.fn().mockResolvedValue({ data: { state: "open" } }),
+        },
+      },
+    };
+    expect(await client.isIssueClosed("owner", "repo", 1)).toBe(false);
+  });
+});
+
 describe("fetchPRReviewComments", () => {
   function createMockClientForReviews(reviewComments: any[]) {
     const client = new GitHubClient("fake-token");

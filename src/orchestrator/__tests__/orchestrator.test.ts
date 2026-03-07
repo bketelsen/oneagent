@@ -23,6 +23,8 @@ function makeMockGitHub() {
     fetchPRsWithReviewFeedback: vi.fn().mockResolvedValue([]),
     fetchPRDiff: vi.fn().mockResolvedValue(""),
     fetchCheckRuns: vi.fn().mockResolvedValue([]),
+    parseDependencies: vi.fn().mockReturnValue([]),
+    isIssueClosed: vi.fn().mockResolvedValue(true),
     issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
     parseIssueKey: (key: string) => {
       const match = key.match(/^(.+)\/(.+)#(\d+)$/);
@@ -428,5 +430,103 @@ describe("Orchestrator", () => {
       "o", "r", 20,
       expect.stringContaining("Consider closing this issue"),
     );
+  });
+
+  it("skips issue when it has an open dependency", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const issue = {
+      key: "o/r#5",
+      owner: "o",
+      repo: "r",
+      number: 5,
+      title: "Dependent issue",
+      body: "Depends on #3",
+      labels: ["oneagent"],
+      state: "open",
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+    mockGitHub.parseDependencies.mockReturnValue([3]);
+    mockGitHub.isIssueClosed.mockResolvedValue(false);
+
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    await orch.tick();
+
+    expect(mockGitHub.parseDependencies).toHaveBeenCalledWith("Depends on #3");
+    expect(mockGitHub.isIssueClosed).toHaveBeenCalledWith("o", "r", 3);
+    expect(mockGitHub.addLabel).not.toHaveBeenCalled(); // dispatch was not called
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ issueKey: "o/r#5", blockedBy: 3 }),
+      "skipping issue with open dependency",
+    );
+  });
+
+  it("dispatches issue when all dependencies are closed", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const issue = {
+      key: "o/r#5",
+      owner: "o",
+      repo: "r",
+      number: 5,
+      title: "Dependent issue",
+      body: "Depends on #3",
+      labels: ["oneagent"],
+      state: "open",
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+    mockGitHub.parseDependencies.mockReturnValue([3]);
+    mockGitHub.isIssueClosed.mockResolvedValue(true);
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    await orch.tick();
+
+    expect(mockGitHub.addLabel).toHaveBeenCalled(); // dispatch was called
+  });
+
+  it("dispatches issue with no dependencies normally", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const issue = {
+      key: "o/r#6",
+      owner: "o",
+      repo: "r",
+      number: 6,
+      title: "Independent issue",
+      body: "No dependencies here",
+      labels: ["oneagent"],
+      state: "open",
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+    mockGitHub.parseDependencies.mockReturnValue([]);
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    await orch.tick();
+
+    expect(mockGitHub.parseDependencies).toHaveBeenCalledWith("No dependencies here");
+    expect(mockGitHub.isIssueClosed).not.toHaveBeenCalled();
+    expect(mockGitHub.addLabel).toHaveBeenCalled(); // dispatch was called
   });
 });
