@@ -211,6 +211,94 @@ describe("Orchestrator", () => {
     orch.stop();
   });
 
+  it("removes inProgress and eligible labels on successful completion", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#10",
+      owner: "o",
+      repo: "r",
+      number: 10,
+      title: "Label cleanup test",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+      } as any,
+    );
+
+    await orch.tick();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Should remove both inProgress and eligible labels
+    expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 10, "oneagent-working");
+    expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 10, "oneagent");
+    expect(mockGitHub.removeLabel).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes inProgress label on failure", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#11",
+      owner: "o",
+      repo: "r",
+      number: 11,
+      title: "Failure label cleanup test",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    (mockRunFn as any).mockRejectedValue(new Error("agent crashed"));
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+      } as any,
+    );
+
+    await orch.tick();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Should remove inProgress label even on failure
+    expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 11, "oneagent-working");
+  });
+
   it("start does not set up review timer when prReview is disabled", () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
