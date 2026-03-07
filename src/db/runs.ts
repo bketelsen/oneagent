@@ -8,9 +8,18 @@ export interface RunRow {
   status: string;
   startedAt: string;
   finishedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
   retryCount: number;
   error?: string;
   tokenUsage?: string;
+}
+
+export interface DurationStats {
+  count: number;
+  avgMs: number;
+  minMs: number;
+  maxMs: number;
 }
 
 export class RunsRepo {
@@ -27,6 +36,45 @@ export class RunsRepo {
     this.db.prepare(`
       UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE id = ?
     `).run(status, finishedAt ?? null, error ?? null, id);
+  }
+
+  completeRun(id: string, status: string, completedAt: string, error?: string): void {
+    // Look up the run to compute duration from started_at
+    const run = this.getById(id);
+    let durationMs: number | null = null;
+    if (run) {
+      durationMs = new Date(completedAt).getTime() - new Date(run.startedAt).getTime();
+    }
+    this.db.prepare(`
+      UPDATE runs SET status = ?, completed_at = ?, duration_ms = ?, finished_at = ?, error = ? WHERE id = ?
+    `).run(status, completedAt, durationMs, completedAt, error ?? null, id);
+  }
+
+  getDurationStats(limit: number): DurationStats | undefined {
+    const row = this.db.prepare(`
+      SELECT
+        COUNT(*) as count,
+        AVG(duration_ms) as avg_ms,
+        MIN(duration_ms) as min_ms,
+        MAX(duration_ms) as max_ms
+      FROM (
+        SELECT duration_ms FROM runs
+        WHERE duration_ms IS NOT NULL
+        ORDER BY completed_at DESC
+        LIMIT ?
+      )
+    `).get(limit) as any;
+
+    if (!row || row.count === 0) {
+      return undefined;
+    }
+
+    return {
+      count: row.count,
+      avgMs: Math.round(row.avg_ms),
+      minMs: row.min_ms,
+      maxMs: row.max_ms,
+    };
   }
 
   getById(id: string): RunRow | undefined {
@@ -47,6 +95,8 @@ export class RunsRepo {
       status: row.status,
       startedAt: row.started_at,
       finishedAt: row.finished_at,
+      completedAt: row.completed_at,
+      durationMs: row.duration_ms,
       retryCount: row.retry_count,
       error: row.error,
       tokenUsage: row.token_usage,
