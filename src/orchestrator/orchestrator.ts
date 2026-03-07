@@ -377,6 +377,7 @@ export class Orchestrator {
       this.state.remove(issue.key);
       this.deps.runsRepo?.completeRun(runId, "completed", new Date().toISOString(), durationMs);
       await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
+      await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.eligible);
       this.logger.info({ runId, issueKey: issue.key, durationMs, tokensIn: totalInputTokens, tokensOut: totalOutputTokens }, "agent run completed");
 
       if (totalInputTokens > 0 || totalOutputTokens > 0) {
@@ -403,11 +404,12 @@ export class Orchestrator {
       this.deps.runsRepo?.completeRun(runId, "failed", new Date().toISOString(), failDurationMs, errorMsg);
       this.logger.error({ err, runId, issueKey: issue.key }, "agent run failed");
 
+      await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
+
       if (this.retryQueue.canRetry(this.retryQueue.getRetryCount(issue.key))) {
         this.retryQueue.enqueue(issue.key, this.retryQueue.getRetryCount(issue.key));
         this.logger.info({ issueKey: issue.key }, "enqueued for retry");
       } else {
-        await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
         await this.github.addLabel(issue.owner, issue.repo, issue.number, this.config.labels.failed);
         this.logger.warn({ issueKey: issue.key }, "retries exhausted, marking failed");
       }
