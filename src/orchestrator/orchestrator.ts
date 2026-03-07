@@ -418,9 +418,17 @@ export class Orchestrator {
       const durationMs = Date.now() - (this.state.get(issue.key)?.startedAt.getTime() ?? Date.now());
       this.state.remove(issue.key);
       this.deps.runsRepo?.completeRun(runId, "completed", new Date().toISOString(), durationMs);
-      await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
+
+      // Keep the inProgress label if a PR was created so review feedback polling can find it.
+      // Only remove it when no PR exists (nothing to iterate on).
+      const hasOpenPR = await this.github.hasOpenPRForIssue(issue.owner, issue.repo, issue.number);
+      if (hasOpenPR) {
+        this.logger.info({ runId, issueKey: issue.key }, "keeping inProgress label — open PR exists for review iteration");
+      } else {
+        await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.inProgress);
+      }
       await this.github.removeLabel(issue.owner, issue.repo, issue.number, this.config.labels.eligible);
-      this.logger.info({ runId, issueKey: issue.key, durationMs, tokensIn: totalInputTokens, tokensOut: totalOutputTokens }, "agent run completed");
+      this.logger.info({ runId, issueKey: issue.key, durationMs, hasOpenPR, tokensIn: totalInputTokens, tokensOut: totalOutputTokens }, "agent run completed");
 
       if (totalInputTokens > 0 || totalOutputTokens > 0) {
         this.deps.metricsRepo?.record({

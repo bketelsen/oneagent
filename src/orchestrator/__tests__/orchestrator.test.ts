@@ -25,6 +25,7 @@ function makeMockGitHub() {
     fetchCheckRuns: vi.fn().mockResolvedValue([]),
     fetchOpenPRs: vi.fn().mockResolvedValue([]),
     fetchPRMergeableStatus: vi.fn().mockResolvedValue({ mergeable: true, mergeableState: "clean" }),
+    hasOpenPRForIssue: vi.fn().mockResolvedValue(false),
     parseDependencies: vi.fn().mockReturnValue([]),
     isIssueClosed: vi.fn().mockResolvedValue(true),
     issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
@@ -226,7 +227,7 @@ describe("Orchestrator", () => {
     orch.stop();
   });
 
-  it("removes inProgress and eligible labels on successful completion", async () => {
+  it("removes inProgress and eligible labels on successful completion when no open PR", async () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
     const mockRunsRepo = {
@@ -247,6 +248,7 @@ describe("Orchestrator", () => {
     };
 
     mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.hasOpenPRForIssue.mockResolvedValue(false);
 
     const mockStream = (async function* () {
       yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
@@ -268,10 +270,60 @@ describe("Orchestrator", () => {
     await orch.tick();
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // Should remove both inProgress and eligible labels
+    // Should remove both inProgress and eligible labels when no PR exists
     expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 10, "oneagent-working");
     expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 10, "oneagent");
     expect(mockGitHub.removeLabel).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps inProgress label on successful completion when open PR exists", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#10",
+      owner: "o",
+      repo: "r",
+      number: 10,
+      title: "Label kept for PR review",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.hasOpenPRForIssue.mockResolvedValue(true);
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+        sseHub: makeMockSSEHub(),
+      } as any,
+    );
+
+    await orch.tick();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Should only remove eligible label, NOT inProgress — label kept for review polling
+    expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 10, "oneagent");
+    expect(mockGitHub.removeLabel).toHaveBeenCalledTimes(1);
+    expect(mockGitHub.removeLabel).not.toHaveBeenCalledWith("o", "r", 10, "oneagent-working");
+    expect(mockGitHub.hasOpenPRForIssue).toHaveBeenCalledWith("o", "r", 10);
   });
 
   it("removes inProgress label on failure", async () => {
@@ -549,6 +601,7 @@ describe("Orchestrator", () => {
         github: mockGitHub,
         runsRepo: mockRunsRepo,
         logger: mockLogger,
+        sseHub: makeMockSSEHub(),
       } as any,
     );
 
@@ -601,6 +654,7 @@ describe("Orchestrator", () => {
         github: mockGitHub,
         runsRepo: mockRunsRepo,
         logger: mockLogger,
+        sseHub: makeMockSSEHub(),
       } as any,
     );
 
