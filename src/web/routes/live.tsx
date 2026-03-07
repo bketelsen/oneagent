@@ -149,10 +149,10 @@ export function liveRoute(ctx: LiveContext): Hono {
             }
 
             var es = new EventSource('/api/v1/events');
-            es.onmessage = function(e) {
+
+            function handleSSEEvent(eventType, e) {
               try {
-                var event = JSON.parse(e.data);
-                var data = event.data || event;
+                var data = JSON.parse(e.data);
 
                 // Filter by runId
                 if (data.runId && data.runId !== runId) return;
@@ -167,13 +167,13 @@ export function liveRoute(ctx: LiveContext): Hono {
                 if (data.toAgent) {
                   metaAgent.innerHTML = '<span class="bg-purple-600 text-white text-xs px-2 py-0.5 rounded-full">' + escapeHtml(data.toAgent) + '</span>';
                 }
-                var type = (event.type || data.type || '').replace(/^agent:/, '');
+                var type = eventType.replace(/^agent:/, '');
                 if (type === 'tool_call') {
                   toolCount++;
                   metaTools.textContent = toolCount;
                 }
 
-                feed.appendChild(renderEvent({ type: event.type || data.type, ...data }));
+                feed.appendChild(renderEvent({ type: eventType, ...data }));
 
                 if (autoScroll) {
                   feed.scrollTop = feed.scrollHeight;
@@ -181,7 +181,18 @@ export function liveRoute(ctx: LiveContext): Hono {
               } catch(err) {
                 console.error('Failed to parse SSE event:', err);
               }
-            };
+            }
+
+            var eventTypes = [
+              'agent:text', 'agent:tool_call', 'agent:tool_result',
+              'agent:handoff', 'agent:error', 'agent:done',
+              'agent:started', 'agent:completed', 'agent:failed'
+            ];
+            eventTypes.forEach(function(eventType) {
+              es.addEventListener(eventType, function(e) {
+                handleSSEEvent(eventType, e);
+              });
+            });
           })();
         `}} />
       </Layout>,

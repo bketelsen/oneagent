@@ -182,6 +182,45 @@ describe("Live dashboard features", () => {
       expect(html).toContain("run-456");
     });
 
+    it("uses addEventListener for named SSE events instead of onmessage", async () => {
+      const app = makeApp({
+        runsRepo: {
+          getById: vi.fn().mockReturnValue({
+            id: "run-sse",
+            issueKey: "o/r#99",
+            provider: "claude-code",
+            status: "running",
+            startedAt: "2026-03-06T12:00:00Z",
+            retryCount: 0,
+          }),
+          listAll: vi.fn().mockReturnValue([]),
+          listByIssue: vi.fn().mockReturnValue([]),
+        },
+      });
+      const res = await app.request("/runs/run-sse/live");
+      const html = await res.text();
+
+      // Should NOT use es.onmessage (only catches unnamed events)
+      expect(html).not.toContain("es.onmessage");
+
+      // Should use addEventListener for each named event type
+      expect(html).toContain("addEventListener");
+      const namedEvents = [
+        "agent:text",
+        "agent:tool_call",
+        "agent:tool_result",
+        "agent:handoff",
+        "agent:error",
+        "agent:done",
+        "agent:started",
+        "agent:completed",
+        "agent:failed",
+      ];
+      for (const eventType of namedEvents) {
+        expect(html).toContain(eventType);
+      }
+    });
+
     it("includes auto-scroll toggle functionality", async () => {
       const app = makeApp({
         runsRepo: {
