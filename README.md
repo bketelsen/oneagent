@@ -99,10 +99,22 @@ Visit `http://localhost:3000` when running. Pages:
 
 - **Dashboard** — active agents, metrics, force refresh
 - **Sprint Board** — kanban view (todo/in-progress/review/done)
-- **Planning** — interactive planning sessions
+- **Planning** — interactive planning sessions (see below)
 - **Settings** — current config display
 
 Real-time updates via Server-Sent Events.
+
+### Interactive Planning
+
+The `/planning/` page provides a conversational planning interface powered by the planner agent. The workflow follows a structured conversation:
+
+1. **Understand** — the planner asks focused questions one at a time to understand requirements
+2. **Propose** — suggests 2-3 approaches with tradeoffs for the user to choose from
+3. **Plan** — builds a detailed implementation plan with ordered tasks and dependencies
+4. **Refine** — iterates on the plan based on user feedback
+5. **Publish** — creates GitHub issues for each task with dependency annotations (`Depends on #N`)
+
+Once published, the orchestrator automatically picks up the issues and processes them in dependency order, enabling end-to-end planning-to-execution workflows.
 
 ## API Endpoints
 
