@@ -70,6 +70,25 @@ describe("Live dashboard features", () => {
       expect(html).toContain("Called Bash: npm test");
     });
 
+    it("shows cancel button on running agent cards", async () => {
+      const app = makeApp({
+        running: [
+          {
+            runId: "r-cancel",
+            issueKey: "o/r#99",
+            provider: "claude-code",
+            currentAgent: "coder",
+            startedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const res = await app.request("/");
+      const html = await res.text();
+      expect(html).toContain("cancel-run-btn");
+      expect(html).toContain('data-cancel-run="r-cancel"');
+      expect(html).toContain("/api/v1/runs/r-cancel/cancel");
+    });
+
     it("shows default values when optional fields are missing", async () => {
       const app = makeApp({
         running: [
@@ -219,6 +238,30 @@ describe("Live dashboard features", () => {
       for (const eventType of namedEvents) {
         expect(html).toContain(eventType);
       }
+    });
+
+    it("renders cancel button on live page", async () => {
+      const app = makeApp({
+        runsRepo: {
+          getById: vi.fn().mockReturnValue({
+            id: "run-cancel",
+            issueKey: "owner/repo#50",
+            provider: "claude-code",
+            status: "running",
+            startedAt: "2026-03-06T12:00:00Z",
+            retryCount: 0,
+          }),
+          listAll: vi.fn().mockReturnValue([]),
+          listByIssue: vi.fn().mockReturnValue([]),
+        },
+      });
+      const res = await app.request("/runs/run-cancel/live");
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("cancel-btn");
+      expect(html).toContain("Cancel Run");
+      expect(html).toContain("/api/v1/runs/");
+      expect(html).toContain("/cancel");
     });
 
     it("includes auto-scroll toggle functionality", async () => {

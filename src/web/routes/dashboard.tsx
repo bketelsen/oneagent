@@ -97,27 +97,35 @@ export function dashboardRoute(ctx: AppContext): Hono {
           ? <p class="text-gray-500">No agents running</p>
           : <div class="space-y-3">
               {state.running.map((r) => (
-                <a href={`/runs/${r.runId}/live`} class="block bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors">
-                  <div class="flex justify-between items-start mb-2">
-                    <div class="flex items-center gap-2">
-                      <span class="text-blue-400 font-medium">{r.issueKey}</span>
-                      <span class="bg-purple-600 text-white text-xs px-2 py-0.5 rounded-full">{r.currentAgent ?? "coder"}</span>
+                <div class="relative bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors">
+                  <a href={`/runs/${r.runId}/live`} class="block">
+                    <div class="flex justify-between items-start mb-2">
+                      <div class="flex items-center gap-2">
+                        <span class="text-blue-400 font-medium">{r.issueKey}</span>
+                        <span class="bg-purple-600 text-white text-xs px-2 py-0.5 rounded-full">{r.currentAgent ?? "coder"}</span>
+                      </div>
+                      <span class="text-green-400 text-sm flex items-center gap-1">
+                        <span class="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                        running
+                      </span>
                     </div>
-                    <span class="text-green-400 text-sm flex items-center gap-1">
-                      <span class="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                      running
-                    </span>
-                  </div>
-                  <div class="flex justify-between items-center text-sm">
-                    <span class="text-gray-400 truncate max-w-md">{(r.lastActivityDescription ?? "Starting...").slice(0, 80)}</span>
-                    <div class="flex items-center gap-4 text-gray-500 shrink-0">
-                      <span>{r.toolCallCount ?? 0} tool calls</span>
-                      {r.startedAt && (
-                        <span class="elapsed-timer" data-started={r.startedAt}>—</span>
-                      )}
+                    <div class="flex justify-between items-center text-sm">
+                      <span class="text-gray-400 truncate max-w-md">{(r.lastActivityDescription ?? "Starting...").slice(0, 80)}</span>
+                      <div class="flex items-center gap-4 text-gray-500 shrink-0">
+                        <span>{r.toolCallCount ?? 0} tool calls</span>
+                        {r.startedAt && (
+                          <span class="elapsed-timer" data-started={r.startedAt}>—</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </a>
+                  </a>
+                  <button
+                    data-cancel-run={r.runId}
+                    class="cancel-run-btn absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center transition-colors"
+                    title="Cancel run"
+                    onclick={`(function(btn){btn.disabled=true;fetch('/api/v1/runs/${r.runId}/cancel',{method:'POST'}).then(function(r){return r.json()}).then(function(d){if(d.ok){btn.textContent='—';btn.className='absolute top-2 right-2 bg-gray-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center cursor-not-allowed'}}).catch(function(){btn.disabled=false})})(this);event.stopPropagation();`}
+                  >✕</button>
+                </div>
               ))}
             </div>
         }

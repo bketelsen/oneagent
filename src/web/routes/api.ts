@@ -37,6 +37,7 @@ export interface AppContext {
   getStatusCounts?: () => StatusCounts;
   getTotalTokens?: () => { tokensIn: number; tokensOut: number; runs: number };
   runsRepo?: RunsRepo;
+  cancelRun?: (runId: string) => boolean;
 }
 
 export function apiRoutes(ctx: AppContext): Hono {
@@ -61,6 +62,18 @@ export function apiRoutes(ctx: AppContext): Hono {
       return c.json({ error: "Run not found" }, 404);
     }
     return c.json(run);
+  });
+
+  api.post("/runs/:id/cancel", (c) => {
+    const id = c.req.param("id");
+    if (!ctx.cancelRun) {
+      return c.json({ error: "Cancel not available" }, 404);
+    }
+    const cancelled = ctx.cancelRun(id);
+    if (!cancelled) {
+      return c.json({ error: "Run not found or not running" }, 404);
+    }
+    return c.json({ ok: true });
   });
 
   api.get("/events", (c) => {
