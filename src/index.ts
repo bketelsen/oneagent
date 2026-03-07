@@ -94,6 +94,8 @@ program
             provider: r.provider,
             status: r.status,
             startedAt: r.startedAt,
+            completedAt: r.completedAt,
+            durationMs: r.durationMs,
             retryCount: r.retryCount,
             lastError: r.error ?? eventsRepo.getLastError(r.id),
           })),

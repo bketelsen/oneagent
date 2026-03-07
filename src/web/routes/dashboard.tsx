@@ -30,6 +30,68 @@ export function dashboardRoute(ctx: AppContext): Hono {
           </div>
         </div>
 
+        {/* Run Timeline */}
+        {(() => {
+          const allRuns = ctx.getRecentRuns?.() ?? [];
+          const timelineRuns = allRuns.slice(0, 20);
+          if (timelineRuns.length === 0) {
+            return (
+              <div class="mb-8">
+                <h2 class="text-xl font-semibold mb-4">Run Timeline</h2>
+                <p class="text-gray-500">No runs to display</p>
+              </div>
+            );
+          }
+          const maxDuration = Math.max(...timelineRuns.map((r) => r.durationMs ?? 0), 1);
+          const statusColor = (status: string) => {
+            if (status === "completed") return "#22c55e";
+            if (status === "failed") return "#ef4444";
+            return "#eab308";
+          };
+          const formatRelativeTime = (dateStr: string) => {
+            const diff = Date.now() - new Date(dateStr).getTime();
+            const mins = Math.floor(diff / 60000);
+            if (mins < 1) return "just now";
+            if (mins < 60) return `${mins}m ago`;
+            const hours = Math.floor(mins / 60);
+            if (hours < 24) return `${hours}h ago`;
+            const days = Math.floor(hours / 24);
+            return `${days}d ago`;
+          };
+          return (
+            <div class="mb-8">
+              <h2 class="text-xl font-semibold mb-4">Run Timeline</h2>
+              <div class="bg-gray-800 rounded-lg p-4" data-testid="run-timeline">
+                <div class="space-y-2">
+                  {timelineRuns.map((run) => {
+                    const widthPct = Math.max(((run.durationMs ?? 0) / maxDuration) * 100, 2);
+                    return (
+                      <a
+                        href={`/runs/${run.id}`}
+                        title={run.issueKey}
+                        class="block"
+                        style="text-decoration:none"
+                      >
+                        <div class="flex items-center gap-2">
+                          <span class="text-xs text-gray-400 w-16 shrink-0 text-right">
+                            {formatRelativeTime(run.startedAt)}
+                          </span>
+                          <div class="flex-1">
+                            <div
+                              class="run-timeline-bar rounded h-5"
+                              style={`width:${widthPct}%;background-color:${statusColor(run.status)};min-width:8px`}
+                            />
+                          </div>
+                        </div>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         <h2 class="text-xl font-semibold mb-4">Running Agents</h2>
         {state.running.length === 0
           ? <p class="text-gray-500">No agents running</p>
