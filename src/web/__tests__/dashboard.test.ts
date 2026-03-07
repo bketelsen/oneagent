@@ -220,6 +220,37 @@ describe("Dashboard route", () => {
       expect(timelineHtml).not.toContain('title="o/r#20"');
     });
 
+    it("renders a color legend below the timeline bars", async () => {
+      const app = makeApp([
+        {
+          id: "leg1",
+          issueKey: "o/r#1",
+          provider: "claude-code",
+          status: "completed",
+          startedAt: new Date(Date.now() - 60000).toISOString(),
+          durationMs: 1000,
+          retryCount: 0,
+        },
+      ]);
+      const res = await app.request("/");
+      const html = await res.text();
+      expect(html).toContain('data-testid="run-timeline-legend"');
+      expect(html).toContain("completed");
+      expect(html).toContain("failed");
+      expect(html).toContain("running");
+      // Verify the legend uses the correct colors
+      expect(html).toContain("color:#22c55e");
+      expect(html).toContain("color:#ef4444");
+      expect(html).toContain("color:#eab308");
+    });
+
+    it("does not render legend when there are no runs", async () => {
+      const app = makeApp([]);
+      const res = await app.request("/");
+      const html = await res.text();
+      expect(html).not.toContain('data-testid="run-timeline-legend"');
+    });
+
     it("shows relative time labels", async () => {
       const app = makeApp([
         {

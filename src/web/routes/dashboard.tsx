@@ -87,6 +87,11 @@ export function dashboardRoute(ctx: AppContext): Hono {
                     );
                   })}
                 </div>
+                <div class="flex items-center gap-4 mt-3 text-xs text-gray-500" data-testid="run-timeline-legend">
+                  <span class="flex items-center gap-1"><span style="color:#22c55e">●</span> completed</span>
+                  <span class="flex items-center gap-1"><span style="color:#ef4444">●</span> failed</span>
+                  <span class="flex items-center gap-1"><span style="color:#eab308">●</span> running</span>
+                </div>
               </div>
             </div>
           );
