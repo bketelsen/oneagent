@@ -1,4 +1,3 @@
-import { EventEmitter } from "node:events";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync, rmSync } from "node:fs";
@@ -19,6 +18,7 @@ import { coderAgent } from "../agents/coder.js";
 import { createStallDetector } from "../middleware/stall-detector.js";
 import { logHandoff } from "../middleware/logging.js";
 import { WorkspaceManager } from "../workspace/manager.js";
+import { SSEHub } from "../web/sse.js";
 import { ulid } from "ulid";
 import type { Logger } from "pino";
 
@@ -32,12 +32,13 @@ export interface OrchestratorDeps {
   metricsRepo?: MetricsRepo;
   workspace?: WorkspaceManager;
   logger: Logger;
+  sseHub: SSEHub;
 }
 
 export class Orchestrator {
   readonly state = new RunState();
   readonly retryQueue: RetryQueue;
-  readonly sseHub = new EventEmitter();
+  readonly sseHub: SSEHub;
   readonly prMonitor: PRMonitor;
   private dispatcher = new Dispatcher();
   private agentMap: Record<string, AgentDef>;
@@ -57,6 +58,7 @@ export class Orchestrator {
     );
     const graph = buildAgentGraph();
     this.agentMap = Object.fromEntries(graph);
+    this.sseHub = deps.sseHub;
     this.logger = deps.logger.child({ module: "orchestrator" });
     this.prMonitor = new PRMonitor(config, github, this.logger);
   }
@@ -202,10 +204,7 @@ export class Orchestrator {
       retryCount: 0,
     });
 
-    this.sseHub.emit("sse", {
-      type: "agent:started",
-      data: { runId, issueKey: prRunKey, provider: entry.provider },
-    });
+    this.sseHub.broadcast("agent:started", { runId, issueKey: prRunKey, provider: entry.provider });
 
     // Mark these comments as processed immediately to avoid re-dispatch
     this.prMonitor.markReviewProcessed(result.prKey, result.latestCommentId);
@@ -265,10 +264,7 @@ export class Orchestrator {
           }
         }
 
-        this.sseHub.emit("sse", {
-          type: `agent:${chunk.type}`,
-          data: { runId, ...chunk },
-        });
+        this.sseHub.broadcast(`agent:${chunk.type}`, { runId, ...chunk });
 
         this.deps.eventsRepo?.insert(runId, chunk.type, chunk as unknown as Record<string, unknown>);
 
@@ -300,10 +296,7 @@ export class Orchestrator {
         });
       }
 
-      this.sseHub.emit("sse", {
-        type: "agent:completed",
-        data: { runId, issueKey: prRunKey },
-      });
+      this.sseHub.broadcast("agent:completed", { runId, issueKey: prRunKey });
     } catch (err) {
       stallDetector.stop();
       this.state.remove(prRunKey);
@@ -312,10 +305,7 @@ export class Orchestrator {
       this.deps.runsRepo?.updateStatus(runId, "failed", new Date().toISOString(), errorMsg);
       this.logger.error({ err, runId, prRunKey }, "review feedback agent run failed");
 
-      this.sseHub.emit("sse", {
-        type: "agent:failed",
-        data: { runId, issueKey: prRunKey, error: errorMsg },
-      });
+      this.sseHub.broadcast("agent:failed", { runId, issueKey: prRunKey, error: errorMsg });
     }
   }
 
@@ -349,10 +339,7 @@ export class Orchestrator {
       retryCount: entry.retryCount,
     });
 
-    this.sseHub.emit("sse", {
-      type: "agent:started",
-      data: { runId, issueKey: issue.key, provider: entry.provider },
-    });
+    this.sseHub.broadcast("agent:started", { runId, issueKey: issue.key, provider: entry.provider });
 
     const workDir = this.deps.workspace?.ensure(issue.key);
     const prompt = this.dispatcher.buildPrompt(issue, workDir);
@@ -410,10 +397,7 @@ export class Orchestrator {
           }
         }
 
-        this.sseHub.emit("sse", {
-          type: `agent:${chunk.type}`,
-          data: { runId, ...chunk },
-        });
+        this.sseHub.broadcast(`agent:${chunk.type}`, { runId, ...chunk });
 
         this.deps.eventsRepo?.insert(runId, chunk.type, chunk as unknown as Record<string, unknown>);
 
@@ -448,10 +432,7 @@ export class Orchestrator {
         });
       }
 
-      this.sseHub.emit("sse", {
-        type: "agent:completed",
-        data: { runId, issueKey: issue.key },
-      });
+      this.sseHub.broadcast("agent:completed", { runId, issueKey: issue.key });
 
       // After successful run, rebase any conflicting PRs
       await this.rebaseConflictingPRs(issue.owner, issue.repo).catch((err) => {
@@ -477,10 +458,7 @@ export class Orchestrator {
         this.logger.warn({ issueKey: issue.key }, "retries exhausted, marking failed");
       }
 
-      this.sseHub.emit("sse", {
-        type: "agent:failed",
-        data: { runId, issueKey: issue.key, error: errorMsg },
-      });
+      this.sseHub.broadcast("agent:failed", { runId, issueKey: issue.key, error: errorMsg });
     }
   }
 

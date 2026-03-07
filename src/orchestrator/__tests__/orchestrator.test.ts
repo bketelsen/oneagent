@@ -36,6 +36,13 @@ function makeMockGitHub() {
   };
 }
 
+function makeMockSSEHub() {
+  return {
+    broadcast: vi.fn(),
+    subscribe: vi.fn().mockReturnValue(() => {}),
+  };
+}
+
 function makeMockLogger() {
   return {
     info: vi.fn(),
@@ -66,14 +73,14 @@ describe("Orchestrator", () => {
   it("can be constructed", () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     expect(orch).toBeDefined();
   });
 
   it("tick fetches issues from all repos", async () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     await orch.tick();
     expect(mockGitHub.fetchIssues).toHaveBeenCalledWith("o", "r", ["oneagent"]);
   });
@@ -113,6 +120,7 @@ describe("Orchestrator", () => {
         github: mockGitHub,
         runsRepo: mockRunsRepo,
         logger: mockLogger,
+        sseHub: makeMockSSEHub(),
       } as any,
     );
 
@@ -164,6 +172,7 @@ describe("Orchestrator", () => {
         github: mockGitHub,
         runsRepo: mockRunsRepo,
         logger: mockLogger,
+        sseHub: makeMockSSEHub(),
       } as any,
     );
 
@@ -187,7 +196,7 @@ describe("Orchestrator", () => {
   it("has a prMonitor instance", () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     expect(orch.prMonitor).toBeDefined();
   });
 
@@ -195,7 +204,7 @@ describe("Orchestrator", () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
     const disabledConfig = { ...mockConfig, prReview: { enabled: false, pollInterval: 60000 } };
-    const orch = new Orchestrator(disabledConfig as any, mockGitHub as any, { config: disabledConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(disabledConfig as any, mockGitHub as any, { config: disabledConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     await orch.tickReviewFeedback();
     expect(mockGitHub.fetchPRsWithReviewFeedback).not.toHaveBeenCalled();
   });
@@ -204,7 +213,7 @@ describe("Orchestrator", () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
     mockGitHub.fetchPRsWithReviewFeedback.mockResolvedValue([]);
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     await orch.tickReviewFeedback();
     expect(mockGitHub.fetchPRsWithReviewFeedback).toHaveBeenCalled();
   });
@@ -212,7 +221,7 @@ describe("Orchestrator", () => {
   it("start sets up review timer when prReview is enabled", () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     orch.start();
     orch.stop();
   });
@@ -252,6 +261,7 @@ describe("Orchestrator", () => {
         github: mockGitHub,
         runsRepo: mockRunsRepo,
         logger: mockLogger,
+        sseHub: makeMockSSEHub(),
       } as any,
     );
 
@@ -295,6 +305,7 @@ describe("Orchestrator", () => {
         github: mockGitHub,
         runsRepo: mockRunsRepo,
         logger: mockLogger,
+        sseHub: makeMockSSEHub(),
       } as any,
     );
 
@@ -309,7 +320,7 @@ describe("Orchestrator", () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
     const disabledConfig = { ...mockConfig, prReview: { enabled: false, pollInterval: 60000 } };
-    const orch = new Orchestrator(disabledConfig as any, mockGitHub as any, { config: disabledConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(disabledConfig as any, mockGitHub as any, { config: disabledConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     orch.start();
     orch.stop();
   });
@@ -336,7 +347,7 @@ describe("Orchestrator", () => {
     const orch = new Orchestrator(
       mockConfig as any,
       mockGitHub as any,
-      { config: mockConfig, github: mockGitHub, logger: mockLogger } as any,
+      { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any,
     );
 
     await orch.tick();
@@ -384,7 +395,7 @@ describe("Orchestrator", () => {
     const orch = new Orchestrator(
       mockConfig as any,
       mockGitHub as any,
-      { config: mockConfig, github: mockGitHub, logger: mockLogger } as any,
+      { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any,
     );
 
     await orch.tick();
@@ -418,7 +429,7 @@ describe("Orchestrator", () => {
     const orch = new Orchestrator(
       mockConfig as any,
       mockGitHub as any,
-      { config: mockConfig, github: mockGitHub, logger: mockLogger } as any,
+      { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any,
     );
 
     await orch.tick();
@@ -455,7 +466,7 @@ describe("Orchestrator", () => {
     mockGitHub.parseDependencies.mockReturnValue([3]);
     mockGitHub.isIssueClosed.mockResolvedValue(false);
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     await orch.tick();
 
     expect(mockGitHub.parseDependencies).toHaveBeenCalledWith("Depends on #3");
@@ -493,7 +504,7 @@ describe("Orchestrator", () => {
     })();
     (mockRunFn as any).mockResolvedValue({ stream: mockStream });
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     await orch.tick();
 
     expect(mockGitHub.addLabel).toHaveBeenCalled(); // dispatch was called
@@ -624,11 +635,112 @@ describe("Orchestrator", () => {
     })();
     (mockRunFn as any).mockResolvedValue({ stream: mockStream });
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
     await orch.tick();
 
     expect(mockGitHub.parseDependencies).toHaveBeenCalledWith("No dependencies here");
     expect(mockGitHub.isIssueClosed).not.toHaveBeenCalled();
     expect(mockGitHub.addLabel).toHaveBeenCalled(); // dispatch was called
+  });
+
+  it("broadcasts SSE events for agent:started, agent:done, and agent:completed", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockSSEHub = makeMockSSEHub();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#99",
+      owner: "o",
+      repo: "r",
+      number: 99,
+      title: "SSE test issue",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+
+    const mockStream = (async function* () {
+      yield { type: "text", content: "hello" };
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+        sseHub: mockSSEHub,
+      } as any,
+    );
+
+    await orch.tick();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Should have broadcast agent:started, agent:text, agent:done, agent:completed
+    const eventTypes = mockSSEHub.broadcast.mock.calls.map((c: unknown[]) => c[0]);
+    expect(eventTypes).toContain("agent:started");
+    expect(eventTypes).toContain("agent:text");
+    expect(eventTypes).toContain("agent:done");
+    expect(eventTypes).toContain("agent:completed");
+  });
+
+  it("broadcasts agent:failed SSE event on error", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockSSEHub = makeMockSSEHub();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#100",
+      owner: "o",
+      repo: "r",
+      number: 100,
+      title: "SSE failure test",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    (mockRunFn as any).mockRejectedValue(new Error("boom"));
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+        sseHub: mockSSEHub,
+      } as any,
+    );
+
+    await orch.tick();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const eventTypes = mockSSEHub.broadcast.mock.calls.map((c: unknown[]) => c[0]);
+    expect(eventTypes).toContain("agent:started");
+    expect(eventTypes).toContain("agent:failed");
+
+    // Check that the failed event has the error message
+    const failedCall = mockSSEHub.broadcast.mock.calls.find((c: unknown[]) => c[0] === "agent:failed");
+    expect(failedCall).toBeDefined();
+    expect(failedCall![1]).toEqual(expect.objectContaining({ error: "boom" }));
   });
 });

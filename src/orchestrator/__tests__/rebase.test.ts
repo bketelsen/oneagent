@@ -91,7 +91,7 @@ describe("rebaseConflictingPRs", () => {
     ]);
     mockGitHub.fetchPRMergeableStatus.mockResolvedValue({ mergeable: true, mergeableState: "clean" });
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: { broadcast: vi.fn() } } as any);
     await orch.rebaseConflictingPRs("o", "r");
 
     expect(mockGitHub.fetchOpenPRs).toHaveBeenCalledWith("o", "r");
@@ -109,7 +109,7 @@ describe("rebaseConflictingPRs", () => {
     ]);
     mockGitHub.fetchPRMergeableStatus.mockResolvedValue({ mergeable: null, mergeableState: "unknown" });
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: { broadcast: vi.fn() } } as any);
     await orch.rebaseConflictingPRs("o", "r");
 
     expect(execFileCb).not.toHaveBeenCalled();
@@ -124,7 +124,7 @@ describe("rebaseConflictingPRs", () => {
     ]);
     mockGitHub.fetchPRMergeableStatus.mockResolvedValue({ mergeable: false, mergeableState: "dirty" });
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: { broadcast: vi.fn() } } as any);
     await orch.rebaseConflictingPRs("o", "r");
 
     // Verify git commands were called
@@ -173,7 +173,7 @@ describe("rebaseConflictingPRs", () => {
       }
     });
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: { broadcast: vi.fn() } } as any);
     await orch.rebaseConflictingPRs("o", "r");
 
     // Should call rebase --abort
@@ -213,7 +213,7 @@ describe("rebaseConflictingPRs", () => {
       callback(new Error("network error"), "", "");
     });
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: { broadcast: vi.fn() } } as any);
 
     // Should throw because clone fails outside the rebase try/catch
     await expect(orch.rebaseConflictingPRs("o", "r")).rejects.toThrow("network error");
@@ -231,7 +231,7 @@ describe("rebaseConflictingPRs", () => {
     const origEnv = process.env.GITHUB_TOKEN;
     delete process.env.GITHUB_TOKEN;
 
-    const orch = new Orchestrator(configNoToken as any, mockGitHub as any, { config: configNoToken, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(configNoToken as any, mockGitHub as any, { config: configNoToken, github: mockGitHub, logger: mockLogger, sseHub: { broadcast: vi.fn() } } as any);
     await orch.rebaseConflictingPRs("o", "r");
 
     expect(mockGitHub.fetchOpenPRs).not.toHaveBeenCalled();
@@ -246,7 +246,7 @@ describe("rebaseConflictingPRs", () => {
 
     mockGitHub.fetchOpenPRs.mockResolvedValue([]);
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: { broadcast: vi.fn() } } as any);
     await orch.rebaseConflictingPRs("o", "r");
 
     expect(mockGitHub.fetchOpenPRs).toHaveBeenCalledWith("o", "r");
@@ -269,7 +269,7 @@ describe("rebaseConflictingPRs", () => {
       callback(null, "", "");
     });
 
-    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: { broadcast: vi.fn() } } as any);
     await orch.rebaseConflictingPRs("o", "r");
 
     // Check info-level logs for rebase attempt and success
