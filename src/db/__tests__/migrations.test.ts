@@ -189,4 +189,15 @@ describe("runMigrations", () => {
     expect(row.completed_at).toBeNull();
     expect(row.duration_ms).toBeNull();
   });
+
+  it("migration 3 adds repo and repo_context to planning_sessions", () => {
+    db = new Database(":memory:");
+    runMigrations(db);
+    const columns = db
+      .prepare("PRAGMA table_info(planning_sessions)")
+      .all()
+      .map((c: any) => c.name as string);
+    expect(columns).toContain("repo");
+    expect(columns).toContain("repo_context");
+  });
 });
