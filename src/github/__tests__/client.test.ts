@@ -445,6 +445,7 @@ describe("fetchOpenPRs", () => {
       repo: "repo",
       number: 1,
       title: "PR 1",
+      body: "",
       headRef: "fix-1",
       state: "open",
       labels: ["bug"],

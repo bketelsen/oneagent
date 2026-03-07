@@ -543,7 +543,8 @@ export class Orchestrator {
 
     const prs = await this.github.fetchOpenPRs(parsed.owner, parsed.repo);
     for (const pr of prs) {
-      if (pr.labels.includes(this.config.labels.inProgress)) {
+      const linkedIssues = this.github.extractLinkedIssueNumbers(pr.body);
+      if (linkedIssues.has(parsed.number)) {
         return pr;
       }
     }

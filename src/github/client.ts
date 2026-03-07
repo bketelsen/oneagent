@@ -96,13 +96,14 @@ export class GitHubClient {
         owner, repo,
         number: pr.number,
         title: pr.title,
+        body: pr.body ?? "",
         headRef: pr.head.ref,
         state: pr.state,
         labels: pr.labels.map((l) => l.name ?? ""),
       }));
   }
 
-  private extractLinkedIssueNumbers(body: string | null | undefined): Set<number> {
+  extractLinkedIssueNumbers(body: string | null | undefined): Set<number> {
     if (!body) return new Set();
     const pattern = /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#(\d+)/gi;
     const numbers = new Set<number>();
@@ -235,6 +236,7 @@ export class GitHubClient {
       repo,
       number: pr.number,
       title: pr.title,
+      body: pr.body ?? "",
       headRef: pr.head.ref,
       state: pr.state,
       labels: pr.labels.map((l) => l.name ?? ""),

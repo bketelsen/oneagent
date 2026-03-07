@@ -16,6 +16,7 @@ export interface PullRequest {
   repo: string;
   number: number;
   title: string;
+  body: string;
   headRef: string;
   state: string;
   labels: string[];
