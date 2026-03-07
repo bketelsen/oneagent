@@ -47,6 +47,23 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 3,
+    description: "Add repo and repo_context to planning_sessions",
+    up(db) {
+      const columns = db
+        .prepare("PRAGMA table_info(planning_sessions)")
+        .all()
+        .map((c: any) => c.name as string);
+
+      if (!columns.includes("repo")) {
+        db.exec("ALTER TABLE planning_sessions ADD COLUMN repo TEXT NOT NULL DEFAULT ''");
+      }
+      if (!columns.includes("repo_context")) {
+        db.exec("ALTER TABLE planning_sessions ADD COLUMN repo_context TEXT");
+      }
+    },
+  },
 ];
 
 function ensureSchemaVersionTable(db: Database.Database): void {

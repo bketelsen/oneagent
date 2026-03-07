@@ -4,7 +4,9 @@ import type { PlanningRepo, PlanningSessionRow } from "../../db/planning.js";
 
 export interface PlanningContext {
   planningRepo: PlanningRepo;
+  repos: Array<{ owner: string; repo: string }>;
   onChat: (sessionId: string, message: string) => AsyncGenerator<string>;
+  onCreate: (sessionId: string, owner: string, repo: string) => Promise<void>;
 }
 
 function renderPlan(plan: any) {
@@ -108,22 +110,34 @@ export function planningRoute(ctx: PlanningContext): Hono {
       <Layout title="Planning">
         <div class="flex justify-between items-center mb-6">
           <h1 class="text-2xl font-bold">Planning Sessions</h1>
-          <form method="post" action="/planning/new">
-            <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">New Session</button>
+          <form method="post" action="/planning/new" class="flex gap-2 items-center">
+            <select name="repo" class="bg-gray-700 rounded px-3 py-2 text-sm">
+              {ctx.repos.map((r) => (
+                <option value={`${r.owner}/${r.repo}`}>{r.owner}/{r.repo}</option>
+              ))}
+            </select>
+            <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
+              Start Planning Session
+            </button>
           </form>
         </div>
         <div class="space-y-2">
           {sessions.map((s: PlanningSessionRow) => (
             <a href={`/planning/${s.id}`} class="block bg-gray-800 rounded p-4 hover:bg-gray-700">
               <div class="flex justify-between items-center">
-                <div class="font-medium">{s.id}</div>
-                {s.status && (
-                  <span class={`text-xs px-2 py-0.5 rounded ${
-                    s.status === "published" ? "bg-green-900 text-green-300" :
-                    s.status === "approved" ? "bg-blue-900 text-blue-300" :
-                    "bg-gray-700 text-gray-400"
-                  }`}>{s.status}</span>
-                )}
+                <div class="font-medium">{s.id.slice(0, 8)}...</div>
+                <div class="flex gap-2 items-center">
+                  {s.repo && (
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">{s.repo}</span>
+                  )}
+                  {s.status && (
+                    <span class={`text-xs px-2 py-0.5 rounded ${
+                      s.status === "published" ? "bg-green-900 text-green-300" :
+                      s.status === "approved" ? "bg-blue-900 text-blue-300" :
+                      "bg-gray-700 text-gray-400"
+                    }`}>{s.status}</span>
+                  )}
+                </div>
               </div>
               <div class="text-gray-500 text-sm">{s.issueKey ?? "No issue"} — {s.updatedAt}</div>
             </a>
@@ -133,9 +147,13 @@ export function planningRoute(ctx: PlanningContext): Hono {
     );
   });
 
-  route.post("/new", (c) => {
+  route.post("/new", async (c) => {
+    const body = await c.req.parseBody();
+    const repoStr = (body.repo as string) || `${ctx.repos[0].owner}/${ctx.repos[0].repo}`;
+    const [owner, repo] = repoStr.split("/");
     const id = crypto.randomUUID();
-    ctx.planningRepo.save(id, []);
+    ctx.planningRepo.save(id, [], undefined, repoStr);
+    await ctx.onCreate(id, owner, repo);
     return c.redirect(`/planning/${id}`);
   });
 
@@ -143,9 +161,13 @@ export function planningRoute(ctx: PlanningContext): Hono {
     const id = c.req.param("id");
     const history = ctx.planningRepo.load(id);
     const plan = ctx.planningRepo.loadPlan(id);
+    const session = ctx.planningRepo.getSession(id);
     return c.html(
       <Layout title={`Planning: ${id}`}>
-        <h1 class="text-xl font-bold mb-4">Planning Session</h1>
+        <h1 class="text-xl font-bold mb-1">Planning Session</h1>
+        {session?.repo && (
+          <p class="text-gray-400 text-sm mb-4">Repository: <span class="text-blue-300">{session.repo}</span></p>
+        )}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Chat panel */}
           <div>

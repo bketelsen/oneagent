@@ -30,6 +30,7 @@ export interface Plan {
 export interface PlanningSessionRow {
   id: string;
   issueKey: string | null;
+  repo: string;
   status: string | null;
   createdAt: string;
   updatedAt: string;
@@ -38,13 +39,13 @@ export interface PlanningSessionRow {
 export class PlanningRepo {
   constructor(private db: Database.Database) {}
 
-  save(id: string, history: PlanningMessage[], issueKey?: string): void {
+  save(id: string, history: PlanningMessage[], issueKey?: string, repo?: string): void {
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO planning_sessions (id, issue_key, created_at, updated_at, history)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO planning_sessions (id, issue_key, repo, created_at, updated_at, history)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET history = ?, updated_at = ?
-    `).run(id, issueKey ?? null, now, now, JSON.stringify(history), JSON.stringify(history), now);
+    `).run(id, issueKey ?? null, repo ?? "", now, now, JSON.stringify(history), JSON.stringify(history), now);
   }
 
   load(id: string): PlanningMessage[] {
@@ -53,9 +54,10 @@ export class PlanningRepo {
   }
 
   list(): PlanningSessionRow[] {
-    return (this.db.prepare("SELECT id, issue_key, status, created_at, updated_at FROM planning_sessions ORDER BY updated_at DESC").all() as any[]).map((r) => ({
+    return (this.db.prepare("SELECT id, issue_key, repo, status, created_at, updated_at FROM planning_sessions ORDER BY updated_at DESC").all() as any[]).map((r) => ({
       id: r.id,
       issueKey: r.issue_key,
+      repo: r.repo ?? "",
       status: r.status,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
@@ -84,5 +86,20 @@ export class PlanningRepo {
       plan.status = status as Plan["status"];
       this.savePlan(id, plan);
     }
+  }
+
+  getSession(id: string): PlanningSessionRow | null {
+    const r = this.db.prepare("SELECT id, issue_key, repo, status, created_at, updated_at FROM planning_sessions WHERE id = ?").get(id) as any;
+    if (!r) return null;
+    return { id: r.id, issueKey: r.issue_key, repo: r.repo ?? "", status: r.status, createdAt: r.created_at, updatedAt: r.updated_at };
+  }
+
+  saveContext(id: string, context: string): void {
+    this.db.prepare("UPDATE planning_sessions SET repo_context = ? WHERE id = ?").run(context, id);
+  }
+
+  loadContext(id: string): string | null {
+    const row = this.db.prepare("SELECT repo_context FROM planning_sessions WHERE id = ?").get(id) as any;
+    return row?.repo_context ?? null;
   }
 }
