@@ -261,13 +261,14 @@ describe("isIssueClosed", () => {
 });
 
 describe("fetchPRReviewComments", () => {
-  function createMockClientForReviews(reviewComments: any[], issueComments: any[] = []) {
+  function createMockClientForReviews(reviewComments: any[], issueComments: any[] = [], reviews: any[] = []) {
     const client = new GitHubClient("fake-token");
     (client as any).octokit = {
       rest: {
         pulls: {
           list: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: reviewComments }),
+          listReviews: vi.fn().mockResolvedValue({ data: reviews }),
           get: vi.fn().mockResolvedValue({ data: "diff content" }),
         },
         issues: {
@@ -405,6 +406,112 @@ describe("fetchPRReviewComments", () => {
     expect(comments[0].body).toBe("");
     expect(comments[0].user).toBe("unknown");
   });
+
+  it("includes review bodies from pulls.listReviews", async () => {
+    const client = createMockClientForReviews([], [], [
+      {
+        id: 500,
+        body: "Overall looks good, but please address the naming conventions.",
+        user: { login: "lead-reviewer" },
+        submitted_at: "2026-01-05T00:00:00Z",
+        commit_id: "abc123",
+      },
+    ]);
+
+    const comments = await client.fetchPRReviewComments("owner", "repo", 10);
+    expect(comments).toHaveLength(1);
+    expect(comments[0].body).toBe("Overall looks good, but please address the naming conventions.");
+    expect(comments[0].user).toBe("lead-reviewer");
+    expect(comments[0].createdAt).toBe("2026-01-05T00:00:00Z");
+    expect(comments[0].pullRequestReviewId).toBe(500);
+    // ID should be offset to avoid collisions
+    expect(comments[0].id).toBe(500 + 10_000_000_000);
+  });
+
+  it("excludes reviews with empty body from pulls.listReviews", async () => {
+    const client = createMockClientForReviews([], [], [
+      {
+        id: 600,
+        body: "",
+        user: { login: "approver" },
+        submitted_at: "2026-01-06T00:00:00Z",
+        commit_id: "def456",
+      },
+      {
+        id: 601,
+        body: null,
+        user: { login: "approver2" },
+        submitted_at: "2026-01-06T01:00:00Z",
+        commit_id: "ghi789",
+      },
+      {
+        id: 602,
+        body: "   ",
+        user: { login: "approver3" },
+        submitted_at: "2026-01-06T02:00:00Z",
+        commit_id: "jkl012",
+      },
+    ]);
+
+    const comments = await client.fetchPRReviewComments("owner", "repo", 10);
+    expect(comments).toHaveLength(0);
+  });
+
+  it("merges inline, issue, and review body comments sorted by date desc", async () => {
+    const client = createMockClientForReviews(
+      [
+        {
+          id: 100,
+          body: "Inline comment",
+          path: "src/index.ts",
+          user: { login: "reviewer" },
+          created_at: "2026-01-01T00:00:00Z",
+          pull_request_review_id: 42,
+        },
+      ],
+      [
+        {
+          id: 300,
+          body: "Issue comment",
+          user: { login: "commenter" },
+          created_at: "2026-01-02T00:00:00Z",
+        },
+      ],
+      [
+        {
+          id: 500,
+          body: "Review summary feedback",
+          user: { login: "lead" },
+          submitted_at: "2026-01-03T00:00:00Z",
+          commit_id: "abc123",
+        },
+      ],
+    );
+
+    const comments = await client.fetchPRReviewComments("owner", "repo", 10);
+    expect(comments).toHaveLength(3);
+    // Review body is newest, then issue, then inline
+    expect(comments[0].body).toBe("Review summary feedback");
+    expect(comments[0].pullRequestReviewId).toBe(500);
+    expect(comments[1].body).toBe("Issue comment");
+    expect(comments[2].body).toBe("Inline comment");
+  });
+
+  it("handles review body with null user", async () => {
+    const client = createMockClientForReviews([], [], [
+      {
+        id: 700,
+        body: "Feedback from unknown user",
+        user: null,
+        submitted_at: "2026-01-07T00:00:00Z",
+        commit_id: "xyz",
+      },
+    ]);
+
+    const comments = await client.fetchPRReviewComments("owner", "repo", 10);
+    expect(comments).toHaveLength(1);
+    expect(comments[0].user).toBe("unknown");
+  });
 });
 
 describe("fetchPRsWithReviewFeedback", () => {
@@ -412,6 +519,7 @@ describe("fetchPRsWithReviewFeedback", () => {
     prs: any[],
     reviewCommentsByPR: Record<number, any[]>,
     issueCommentsByPR: Record<number, any[]> = {},
+    reviewsByPR: Record<number, any[]> = {},
   ) {
     const client = new GitHubClient("fake-token");
     (client as any).octokit = {
@@ -420,6 +528,9 @@ describe("fetchPRsWithReviewFeedback", () => {
           list: vi.fn().mockResolvedValue({ data: prs }),
           listReviewComments: vi.fn().mockImplementation(({ pull_number }: { pull_number: number }) => {
             return Promise.resolve({ data: reviewCommentsByPR[pull_number] ?? [] });
+          }),
+          listReviews: vi.fn().mockImplementation(({ pull_number }: { pull_number: number }) => {
+            return Promise.resolve({ data: reviewsByPR[pull_number] ?? [] });
           }),
         },
         issues: {
