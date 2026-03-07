@@ -83,6 +83,16 @@ program
           retryQueue: [],
           metrics: metricsRepo.totals(),
         }),
+        getRecentRuns: () =>
+          runsRepo.listAll(50).map((r) => ({
+            id: r.id,
+            issueKey: r.issueKey,
+            provider: r.provider,
+            status: r.status,
+            startedAt: r.startedAt,
+            retryCount: r.retryCount,
+            lastError: r.error ?? eventsRepo.getLastError(r.id),
+          })),
       };
 
       const app = createApp({

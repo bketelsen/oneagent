@@ -38,6 +38,10 @@ export class RunsRepo {
     return (this.db.prepare("SELECT * FROM runs WHERE issue_key = ? ORDER BY started_at DESC").all(issueKey) as any[]).map(this.mapRow);
   }
 
+  listAll(limit = 50): RunRow[] {
+    return (this.db.prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT ?").all(limit) as any[]).map(this.mapRow);
+  }
+
   private mapRow(row: any): RunRow {
     return {
       id: row.id,
