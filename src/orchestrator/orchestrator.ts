@@ -212,7 +212,7 @@ export class Orchestrator {
     const workDir = this.deps.workspace?.ensure(prRunKey);
 
     // Run agent in background
-    this.executeReviewRun(runId, prRunKey, result.prompt, abortController, workDir).catch((err) => {
+    this.executeReviewRun(runId, prRunKey, result, abortController, workDir).catch((err) => {
       this.logger.error({ err, runId, prKey: result.prKey }, "unhandled review run error");
     });
   }
@@ -220,10 +220,11 @@ export class Orchestrator {
   private async executeReviewRun(
     runId: string,
     prRunKey: string,
-    prompt: string,
+    result: ReviewFeedbackResult,
     abortController: AbortController,
     workDir?: string,
   ): Promise<void> {
+    const prompt = result.prompt;
     const stallDetector = createStallDetector(this.config.agent.stallTimeout, () => {
       this.logger.warn({ runId, prRunKey }, "review agent stalled, aborting");
       abortController.abort();
@@ -243,6 +244,7 @@ export class Orchestrator {
 
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
+      let lastAgentText = "";
 
       for await (const chunk of agentRun.stream) {
         stallDetector.activity();
@@ -261,6 +263,7 @@ export class Orchestrator {
             const textChunk = chunk as unknown as { text?: string };
             const content = textChunk.text ?? "";
             entry.lastActivityDescription = content.length > 80 ? content.slice(0, 80) : (content || "Thinking...");
+            if (content) lastAgentText = content;
           }
         }
 
@@ -285,6 +288,18 @@ export class Orchestrator {
       this.state.remove(prRunKey);
       this.deps.runsRepo?.updateStatus(runId, "completed", new Date().toISOString());
       this.logger.info({ runId, prRunKey, durationMs, tokensIn: totalInputTokens, tokensOut: totalOutputTokens }, "review feedback agent run completed");
+
+      // Post a comment on the PR so the reviewer gets notified
+      const [repoOwner, repoName] = result.repo.split("/");
+      const summary = lastAgentText
+        ? `\n\n**Summary:**\n${lastAgentText}`
+        : "";
+      await this.github.addComment(
+        repoOwner,
+        repoName,
+        result.pr,
+        `I've addressed the review feedback and pushed a fix. Ready for re-review.${summary}`,
+      );
 
       if (totalInputTokens > 0 || totalOutputTokens > 0) {
         this.deps.metricsRepo?.record({
