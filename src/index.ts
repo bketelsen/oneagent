@@ -19,6 +19,9 @@ import { SSEHub } from "./web/sse.js";
 import { createApp } from "./web/app.js";
 import { serve } from "@hono/node-server";
 import { createLogger } from "./logger.js";
+import { createPlanningTools } from "./tools/planning.js";
+import { createPlannerAgent } from "./agents/planner.js";
+import { run } from "one-agent-sdk";
 
 const program = new Command();
 program.name("oneagent").description("AI agent orchestrator for GitHub issues").version("0.1.0");
@@ -122,8 +125,43 @@ program
         },
         planning: {
           planningRepo,
-          onChat: async function* (_sessionId: string, _message: string) {
-            yield "Planning agent not yet connected";
+          onChat: async function* (sessionId: string, message: string) {
+            const firstRepo = config.github.repos[0];
+            const planningTools = createPlanningTools({
+              planningRepo,
+              repoConfig: firstRepo,
+            });
+            const agent = createPlannerAgent([
+              planningTools.createPlan,
+              planningTools.refinePlan,
+              planningTools.publishPlan,
+            ]);
+
+            // Load history for context
+            const history = planningRepo.load(sessionId);
+            const historyText = history
+              .map((m) => `${m.role}: ${m.content}`)
+              .join("\n\n");
+
+            // Inject sessionId and history into the prompt
+            const prompt =
+              agent.prompt +
+              `\n\nIMPORTANT: The current planning session ID is "${sessionId}". Always use this sessionId when calling create_plan, refine_plan, or publish_plan.` +
+              (historyText ? `\n\nConversation history:\n${historyText}` : "") +
+              `\n\nUser: ${message}`;
+
+            const agentRun = await run(prompt, {
+              provider: config.agent.provider,
+              agent: agent as any,
+            });
+
+            let fullResponse = "";
+            for await (const chunk of agentRun.stream) {
+              if (chunk.type === "text") {
+                fullResponse += chunk.text;
+                yield chunk.text;
+              }
+            }
           },
         },
         getConfig: () => config,
