@@ -32,8 +32,8 @@ const concurrencySchema = z.object({
 });
 
 const pollSchema = z.object({
-  interval: z.number().default(30000),
-  reconcileInterval: z.number().default(15000),
+  interval: z.number().min(5000).default(30000),
+  reconcileInterval: z.number().min(5000).default(15000),
 });
 
 const statusesSchema = z.object({
