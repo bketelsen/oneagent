@@ -226,6 +226,18 @@ export class GitHubClient {
     };
   }
 
+  async hasOpenPRForIssue(owner: string, repo: string, issueNumber: number): Promise<boolean> {
+    const { data: prs } = await this.octokit.rest.pulls.list({ owner, repo, state: "open", per_page: 100 });
+    for (const pr of prs) {
+      const linked = this.extractLinkedIssueNumbers(pr.body);
+      if (linked.has(issueNumber)) {
+        this.logger.debug({ owner, repo, issueNumber, prNumber: pr.number }, "found open PR for issue");
+        return true;
+      }
+    }
+    return false;
+  }
+
   async fetchOpenPRs(owner: string, repo: string): Promise<PullRequest[]> {
     const { data } = await this.octokit.rest.pulls.list({ owner, repo, state: "open", per_page: 100 });
     this.logger.debug({ owner, repo, count: data.length }, "fetched open PRs");

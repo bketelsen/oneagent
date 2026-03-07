@@ -419,6 +419,46 @@ describe("fetchPRsWithReviewFeedback", () => {
   });
 });
 
+describe("hasOpenPRForIssue", () => {
+  function createMockClientForHasOpenPR(prs: any[]) {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          list: vi.fn().mockResolvedValue({ data: prs }),
+        },
+      },
+    };
+    return client;
+  }
+
+  it("returns true when an open PR references the issue", async () => {
+    const client = createMockClientForHasOpenPR([
+      { number: 5, body: "Fixes #10", state: "open", labels: [], head: { ref: "fix-10" } },
+    ]);
+    expect(await client.hasOpenPRForIssue("owner", "repo", 10)).toBe(true);
+  });
+
+  it("returns false when no open PR references the issue", async () => {
+    const client = createMockClientForHasOpenPR([
+      { number: 5, body: "Fixes #99", state: "open", labels: [], head: { ref: "fix-99" } },
+    ]);
+    expect(await client.hasOpenPRForIssue("owner", "repo", 10)).toBe(false);
+  });
+
+  it("returns false when there are no open PRs", async () => {
+    const client = createMockClientForHasOpenPR([]);
+    expect(await client.hasOpenPRForIssue("owner", "repo", 10)).toBe(false);
+  });
+
+  it("returns false when PR body is null", async () => {
+    const client = createMockClientForHasOpenPR([
+      { number: 5, body: null, state: "open", labels: [], head: { ref: "branch" } },
+    ]);
+    expect(await client.hasOpenPRForIssue("owner", "repo", 10)).toBe(false);
+  });
+});
+
 describe("fetchOpenPRs", () => {
   function createMockClientForOpenPRs(prs: any[]) {
     const client = new GitHubClient("fake-token");
