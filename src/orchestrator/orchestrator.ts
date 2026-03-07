@@ -13,6 +13,7 @@ import { Dispatcher } from "./dispatcher.js";
 import { buildAgentGraph, type AgentDef } from "../agents/graph.js";
 import { coderAgent } from "../agents/coder.js";
 import { createStallDetector } from "../middleware/stall-detector.js";
+import { logHandoff } from "../middleware/logging.js";
 import { WorkspaceManager } from "../workspace/manager.js";
 import { ulid } from "ulid";
 import type { Logger } from "pino";
@@ -190,6 +191,11 @@ export class Orchestrator {
         });
 
         this.deps.eventsRepo?.insert(runId, chunk.type, chunk as unknown as Record<string, unknown>);
+
+        if (chunk.type === "handoff") {
+          const { fromAgent, toAgent } = chunk as unknown as { fromAgent: string; toAgent: string };
+          logHandoff(fromAgent, toAgent, runId, issue.number, this.logger);
+        }
 
         if (chunk.type === "done" && chunk.usage) {
           totalInputTokens += chunk.usage.inputTokens;
