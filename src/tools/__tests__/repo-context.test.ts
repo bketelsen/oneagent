@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { discoverInstructionFiles } from "../repo-context.js";
+import { discoverInstructionFiles, discoverCustomSkills } from "../repo-context.js";
 
 describe("discoverInstructionFiles", () => {
   let tempDir: string;
@@ -55,6 +55,70 @@ describe("discoverInstructionFiles", () => {
 
   it("returns empty string when no instruction files found", () => {
     const result = discoverInstructionFiles(tempDir);
+    expect(result).toBe("");
+  });
+});
+
+describe("discoverCustomSkills", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "repo-ctx-skills-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("discovers a valid skill file", () => {
+    mkdirSync(join(tempDir, ".oneagent", "skills"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".oneagent", "skills", "django.md"),
+      "---\nname: Django\ndescription: Django web framework skill\n---\nUse Django best practices.",
+    );
+    const result = discoverCustomSkills(tempDir);
+    expect(result).toContain("## Custom Skill: Django");
+    expect(result).toContain("Django web framework skill");
+    expect(result).toContain("Use Django best practices.");
+  });
+
+  it("discovers multiple skill files", () => {
+    mkdirSync(join(tempDir, ".oneagent", "skills"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".oneagent", "skills", "django.md"),
+      "---\nname: Django\ndescription: Django skill\n---\nDjango body.",
+    );
+    writeFileSync(
+      join(tempDir, ".oneagent", "skills", "react.md"),
+      "---\nname: React\ndescription: React skill\n---\nReact body.",
+    );
+    const result = discoverCustomSkills(tempDir);
+    expect(result).toContain("## Custom Skill: Django");
+    expect(result).toContain("## Custom Skill: React");
+  });
+
+  it("skips files without required frontmatter", () => {
+    mkdirSync(join(tempDir, ".oneagent", "skills"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".oneagent", "skills", "incomplete.md"),
+      "---\nname: Incomplete\n---\nNo description field.",
+    );
+    const result = discoverCustomSkills(tempDir);
+    expect(result).toBe("");
+  });
+
+  it("skips non-markdown files", () => {
+    mkdirSync(join(tempDir, ".oneagent", "skills"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".oneagent", "skills", "notes.txt"),
+      "---\nname: Notes\ndescription: Some notes\n---\nBody text.",
+    );
+    const result = discoverCustomSkills(tempDir);
+    expect(result).toBe("");
+  });
+
+  it("returns empty string when .oneagent/skills does not exist", () => {
+    const result = discoverCustomSkills(tempDir);
     expect(result).toBe("");
   });
 });
