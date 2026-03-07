@@ -10,26 +10,26 @@ export function dashboardRoute(ctx: AppContext): Hono {
     return c.html(
       <Layout title="Dashboard">
         <div class="grid grid-cols-3 gap-4 mb-8">
-          <div class="bg-gray-800 rounded-lg p-4">
-            <div class="text-sm text-gray-400">Active Agents</div>
+          <div class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">Active Agents</div>
             <div class="text-3xl font-bold">{state.running.length}</div>
           </div>
-          <div class="bg-gray-800 rounded-lg p-4">
-            <div class="text-sm text-gray-400">Total Runs</div>
+          <div class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">Total Runs</div>
             <div class="text-3xl font-bold">{state.metrics.runs}</div>
           </div>
-          <div class="bg-gray-800 rounded-lg p-4">
-            <div class="text-sm text-gray-400">Tokens Used</div>
+          <div class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">Tokens Used</div>
             <div class="text-3xl font-bold">{state.metrics.tokensIn + state.metrics.tokensOut}</div>
           </div>
         </div>
 
         <h2 class="text-xl font-semibold mb-4">Running Agents</h2>
         {state.running.length === 0
-          ? <p class="text-gray-500">No agents running</p>
+          ? <p class="text-gray-400 dark:text-gray-500">No agents running</p>
           : <div class="space-y-3">
               {state.running.map((r) => (
-                <a href={`/runs/${r.runId}/live`} class="block bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors">
+                <a href={`/runs/${r.runId}/live`} class="block bg-gray-100 dark:bg-gray-800 rounded-lg p-4 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                   <div class="flex justify-between items-start mb-2">
                     <div class="flex items-center gap-2">
                       <span class="text-blue-400 font-medium">{r.issueKey}</span>
@@ -41,8 +41,8 @@ export function dashboardRoute(ctx: AppContext): Hono {
                     </span>
                   </div>
                   <div class="flex justify-between items-center text-sm">
-                    <span class="text-gray-400 truncate max-w-md">{(r.lastActivityDescription ?? "Starting...").slice(0, 80)}</span>
-                    <div class="flex items-center gap-4 text-gray-500 shrink-0">
+                    <span class="text-gray-500 dark:text-gray-400 truncate max-w-md">{(r.lastActivityDescription ?? "Starting...").slice(0, 80)}</span>
+                    <div class="flex items-center gap-4 text-gray-400 dark:text-gray-500 shrink-0">
                       <span>{r.toolCallCount ?? 0} tool calls</span>
                       {r.startedAt && (
                         <span class="elapsed-timer" data-started={r.startedAt}>—</span>
@@ -75,12 +75,12 @@ export function dashboardRoute(ctx: AppContext): Hono {
         {(() => {
           const runs = ctx.getRecentRuns?.() ?? [];
           if (runs.length === 0) {
-            return <p class="text-gray-500">No runs recorded yet</p>;
+            return <p class="text-gray-400 dark:text-gray-500">No runs recorded yet</p>;
           }
           return (
             <div class="overflow-x-auto">
               <table class="w-full text-sm text-left">
-                <thead class="text-gray-400 border-b border-gray-700">
+                <thead class="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                   <tr>
                     <th class="px-4 py-2">Issue</th>
                     <th class="px-4 py-2">Provider</th>
@@ -92,13 +92,13 @@ export function dashboardRoute(ctx: AppContext): Hono {
                 </thead>
                 <tbody>
                   {runs.map((run) => (
-                    <tr class="border-b border-gray-800">
+                    <tr class="border-b border-gray-100 dark:border-gray-800">
                       <td class="px-4 py-2 text-blue-400">
                         <a href={run.status === "running" ? `/runs/${run.id}/live` : `/runs/${run.id}`} class="hover:underline">{run.issueKey}</a>
                       </td>
                       <td class="px-4 py-2">{run.provider}</td>
                       <td class="px-4 py-2">{run.status}</td>
-                      <td class="px-4 py-2 text-gray-400">{run.startedAt}</td>
+                      <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{run.startedAt}</td>
                       <td class="px-4 py-2">{run.retryCount}</td>
                       <td class="px-4 py-2 text-red-400">{run.lastError ? (run.lastError.length > 100 ? run.lastError.slice(0, 100) + "..." : run.lastError) : ""}</td>
                     </tr>
