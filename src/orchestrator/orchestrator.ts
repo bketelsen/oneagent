@@ -117,6 +117,21 @@ export class Orchestrator {
         continue;
       }
 
+      // Check issue dependencies
+      const deps = this.github.parseDependencies(issue.body);
+      if (deps.length > 0) {
+        let blocked = false;
+        for (const dep of deps) {
+          const closed = await this.github.isIssueClosed(issue.owner, issue.repo, dep);
+          if (!closed) {
+            this.logger.info({ issueKey: issue.key, blockedBy: dep }, "skipping issue with open dependency");
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+      }
+
       await this.dispatch(issue);
     }
 

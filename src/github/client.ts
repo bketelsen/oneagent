@@ -188,6 +188,32 @@ export class GitHubClient {
     this.logger.debug({ owner, repo, issueNumber }, "added comment to issue");
   }
 
+  /**
+   * Parse dependency markers from an issue body.
+   * Supports "Depends on #N", "Blocked by #N", "Requires #N" (case-insensitive).
+   */
+  parseDependencies(body: string | null | undefined): number[] {
+    if (!body) return [];
+    const pattern = /(?:depends\s+on|blocked\s+by|requires)\s+#(\d+)/gi;
+    const numbers: number[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(body)) !== null) {
+      const num = parseInt(match[1], 10);
+      if (!numbers.includes(num)) {
+        numbers.push(num);
+      }
+    }
+    return numbers;
+  }
+
+  /**
+   * Check if a specific issue is closed.
+   */
+  async isIssueClosed(owner: string, repo: string, number: number): Promise<boolean> {
+    const { data } = await this.octokit.rest.issues.get({ owner, repo, issue_number: number });
+    return data.state === "closed";
+  }
+
   async fetchCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
     const { data } = await this.octokit.rest.checks.listForRef({ owner, repo, ref });
     this.logger.debug({ owner, repo, ref, count: data.check_runs.length }, "fetched check runs");
