@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS planning_sessions (
   issue_key  TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  history    TEXT NOT NULL
+  history    TEXT NOT NULL,
+  plan       TEXT,
+  status     TEXT DEFAULT 'draft'
 );
 
 CREATE TABLE IF NOT EXISTS metrics (

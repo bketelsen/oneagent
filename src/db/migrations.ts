@@ -30,6 +30,23 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 2,
+    description: "Add plan and status columns to planning_sessions",
+    up(db) {
+      const columns = db
+        .prepare("PRAGMA table_info(planning_sessions)")
+        .all()
+        .map((c: any) => c.name as string);
+
+      if (!columns.includes("plan")) {
+        db.exec("ALTER TABLE planning_sessions ADD COLUMN plan TEXT");
+      }
+      if (!columns.includes("status")) {
+        db.exec("ALTER TABLE planning_sessions ADD COLUMN status TEXT DEFAULT 'draft'");
+      }
+    },
+  },
 ];
 
 function ensureSchemaVersionTable(db: Database.Database): void {
