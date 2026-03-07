@@ -10,6 +10,8 @@ export interface DashboardRun {
   provider: string;
   status: string;
   startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
   retryCount: number;
   lastError?: string;
 }
