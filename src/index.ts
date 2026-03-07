@@ -93,6 +93,7 @@ program
             retryCount: r.retryCount,
             lastError: r.error ?? eventsRepo.getLastError(r.id),
           })),
+        runsRepo,
       };
 
       const app = createApp({

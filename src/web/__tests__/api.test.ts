@@ -1,6 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import Database from "better-sqlite3";
 import { createApp } from "../app.js";
 import { SSEHub } from "../sse.js";
+import { runMigrations } from "../../db/migrations.js";
+import { RunsRepo } from "../../db/runs.js";
 
 describe("API routes", () => {
   it("POST /api/v1/refresh returns 200", async () => {
@@ -93,5 +96,91 @@ describe("API routes", () => {
       failed: 0,
       running: 0,
     });
+  });
+});
+
+describe("GET /api/v1/runs/:id", () => {
+  let db: Database.Database;
+  let runsRepo: RunsRepo;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    runMigrations(db);
+    runsRepo = new RunsRepo(db);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  function makeApp() {
+    return createApp({
+      sseHub: new SSEHub(),
+      onRefresh: async () => {},
+      getState: () => ({
+        running: [],
+        retryQueue: [],
+        metrics: { tokensIn: 0, tokensOut: 0, runs: 0 },
+      }),
+      runsRepo,
+    });
+  }
+
+  it("returns 200 with run JSON for existing run", async () => {
+    const now = new Date().toISOString();
+    runsRepo.insert({
+      id: "run-abc",
+      issueKey: "owner/repo#42",
+      provider: "claude-code",
+      model: "claude-4",
+      status: "running",
+      startedAt: now,
+      retryCount: 0,
+    });
+
+    const app = makeApp();
+    const res = await app.request("/api/v1/runs/run-abc");
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.id).toBe("run-abc");
+    expect(body.issueKey).toBe("owner/repo#42");
+    expect(body.provider).toBe("claude-code");
+    expect(body.model).toBe("claude-4");
+    expect(body.status).toBe("running");
+    expect(body.startedAt).toBe(now);
+    expect(body.retryCount).toBe(0);
+  });
+
+  it("returns 404 JSON for unknown run ID", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/v1/runs/nonexistent");
+    expect(res.status).toBe(404);
+
+    const body = await res.json();
+    expect(body.error).toBe("Run not found");
+  });
+
+  it("returns completed run with duration and error fields", async () => {
+    const now = new Date().toISOString();
+    runsRepo.insert({
+      id: "run-fail",
+      issueKey: "owner/repo#5",
+      provider: "claude-code",
+      status: "running",
+      startedAt: now,
+      retryCount: 1,
+    });
+    runsRepo.completeRun("run-fail", "failed", now, 5000, "timeout exceeded");
+
+    const app = makeApp();
+    const res = await app.request("/api/v1/runs/run-fail");
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.status).toBe("failed");
+    expect(body.durationMs).toBe(5000);
+    expect(body.error).toBe("timeout exceeded");
+    expect(body.completedAt).toBe(now);
   });
 });
