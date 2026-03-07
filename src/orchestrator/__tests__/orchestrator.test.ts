@@ -812,7 +812,7 @@ describe("Orchestrator", () => {
       {
         pr: { key: "o/r#5", owner: "o", repo: "r", number: 5, title: "Test PR", headRef: "fix-branch", state: "open", labels: ["oneagent-working"] },
         comments: [{ id: 100, body: "Please fix the typo", path: "src/index.ts", user: "reviewer", createdAt: "2026-01-01T00:00:00Z", pullRequestReviewId: 1 }],
-        latestCommentId: 100,
+        latestTimestamp: "2026-01-01T00:00:00Z",
       },
     ]);
 
@@ -862,7 +862,7 @@ describe("Orchestrator", () => {
       {
         pr: { key: "o/r#6", owner: "o", repo: "r", number: 6, title: "Silent PR", headRef: "silent-branch", state: "open", labels: ["oneagent-working"] },
         comments: [{ id: 200, body: "Fix this", path: "src/app.ts", user: "reviewer", createdAt: "2026-01-01T00:00:00Z", pullRequestReviewId: 2 }],
-        latestCommentId: 200,
+        latestTimestamp: "2026-01-01T00:00:00Z",
       },
     ]);
 
@@ -906,7 +906,7 @@ describe("Orchestrator", () => {
       {
         pr: { key: "o/r#7", owner: "o", repo: "r", number: 7, title: "Failing PR", headRef: "fail-branch", state: "open", labels: ["oneagent-working"] },
         comments: [{ id: 300, body: "Fix this", path: "src/broken.ts", user: "reviewer", createdAt: "2026-01-01T00:00:00Z", pullRequestReviewId: 3 }],
-        latestCommentId: 300,
+        latestTimestamp: "2026-01-01T00:00:00Z",
       },
     ]);
 

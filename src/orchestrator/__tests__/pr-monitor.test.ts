@@ -70,7 +70,7 @@ describe("PRMonitor", () => {
         comments: [
           { id: 100, body: "Please fix the typo", path: "src/index.ts", user: "reviewer", createdAt: "2026-01-01T00:00:00Z", pullRequestReviewId: 1 },
         ],
-        latestCommentId: 100,
+        latestTimestamp: "2026-01-01T00:00:00Z",
       },
     ]);
 
@@ -80,21 +80,21 @@ describe("PRMonitor", () => {
     expect(results).toHaveLength(1);
     expect(results[0].prKey).toBe("o/r#10");
     expect(results[0].commentCount).toBe(1);
-    expect(results[0].latestCommentId).toBe(100);
+    expect(results[0].latestTimestamp).toBe("2026-01-01T00:00:00Z");
     expect(results[0].prompt).toContain("Please fix the typo");
     expect(results[0].prompt).toContain("feature-branch");
     expect(results[0].headRef).toBe("feature-branch");
   });
 
-  it("markReviewProcessed tracks last processed comment ID", () => {
+  it("markReviewProcessed tracks last processed timestamp", () => {
     const monitor = new PRMonitor(baseConfig as any, createMockGitHub() as any, createMockLogger() as any);
-    expect(monitor.getLastProcessedCommentId("o/r#10")).toBeUndefined();
+    expect(monitor.getLastProcessedTimestamp("o/r#10")).toBeUndefined();
 
-    monitor.markReviewProcessed("o/r#10", 100);
-    expect(monitor.getLastProcessedCommentId("o/r#10")).toBe(100);
+    monitor.markReviewProcessed("o/r#10", "2026-01-01T00:00:00Z");
+    expect(monitor.getLastProcessedTimestamp("o/r#10")).toBe("2026-01-01T00:00:00Z");
 
-    monitor.markReviewProcessed("o/r#10", 200);
-    expect(monitor.getLastProcessedCommentId("o/r#10")).toBe(200);
+    monitor.markReviewProcessed("o/r#10", "2026-01-02T00:00:00Z");
+    expect(monitor.getLastProcessedTimestamp("o/r#10")).toBe("2026-01-02T00:00:00Z");
   });
 
   it("checkReviewFeedback includes diff in prompt", async () => {
@@ -114,7 +114,7 @@ describe("PRMonitor", () => {
         comments: [
           { id: 50, body: "Fix this", path: "a.ts", user: "alice", createdAt: "2026-01-01", pullRequestReviewId: 1 },
         ],
-        latestCommentId: 50,
+        latestTimestamp: "2026-01-01",
       },
     ]);
     github.fetchPRDiff.mockResolvedValue("+added line\n-removed line");
@@ -144,7 +144,7 @@ describe("PRMonitor", () => {
         comments: [
           { id: 50, body: "Fix this", path: "a.ts", user: "alice", createdAt: "2026-01-01", pullRequestReviewId: 1 },
         ],
-        latestCommentId: 50,
+        latestTimestamp: "2026-01-01",
       },
     ]);
     github.fetchPRDiff.mockRejectedValue(new Error("network error"));

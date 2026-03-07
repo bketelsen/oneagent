@@ -424,8 +424,7 @@ describe("fetchPRReviewComments", () => {
     expect(comments[0].user).toBe("lead-reviewer");
     expect(comments[0].createdAt).toBe("2026-01-05T00:00:00Z");
     expect(comments[0].pullRequestReviewId).toBe(500);
-    // ID should be offset to avoid collisions
-    expect(comments[0].id).toBe(500 + 10_000_000_000);
+    expect(comments[0].id).toBe(500);
   });
 
   it("excludes reviews with empty body from pulls.listReviews", async () => {
@@ -560,7 +559,7 @@ describe("fetchPRsWithReviewFeedback", () => {
     expect(results).toHaveLength(1);
     expect(results[0].pr.number).toBe(10);
     expect(results[0].comments).toHaveLength(2);
-    expect(results[0].latestCommentId).toBe(101);
+    expect(results[0].latestTimestamp).toBe("2026-01-02");
   });
 
   it("skips PRs whose comments have already been processed", async () => {
@@ -575,7 +574,7 @@ describe("fetchPRsWithReviewFeedback", () => {
       },
     );
 
-    const lastProcessed = new Map([["owner/repo#10", 100]]);
+    const lastProcessed = new Map([["owner/repo#10", "2026-01-01"]]);
     const results = await client.fetchPRsWithReviewFeedback("owner", "repo", "oneagent-working", lastProcessed);
     expect(results).toHaveLength(0);
   });
@@ -593,12 +592,12 @@ describe("fetchPRsWithReviewFeedback", () => {
       },
     );
 
-    const lastProcessed = new Map([["owner/repo#10", 100]]);
+    const lastProcessed = new Map([["owner/repo#10", "2026-01-01"]]);
     const results = await client.fetchPRsWithReviewFeedback("owner", "repo", "oneagent-working", lastProcessed);
     expect(results).toHaveLength(1);
     expect(results[0].comments).toHaveLength(1);
     expect(results[0].comments[0].id).toBe(200);
-    expect(results[0].latestCommentId).toBe(200);
+    expect(results[0].latestTimestamp).toBe("2026-01-02");
   });
 
   it("skips PRs with no review comments", async () => {

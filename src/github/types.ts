@@ -40,5 +40,5 @@ export interface ReviewComment {
 export interface PRWithReviewFeedback {
   pr: PullRequest;
   comments: ReviewComment[];
-  latestCommentId: number;
+  latestTimestamp: string;
 }

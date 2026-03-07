@@ -9,7 +9,7 @@ export interface ReviewFeedbackResult {
   pr: number;
   prKey: string;
   commentCount: number;
-  latestCommentId: number;
+  latestTimestamp: string;
   prompt: string;
   headRef: string;
 }
@@ -19,8 +19,8 @@ export class PRMonitor {
   private reviewTimer?: ReturnType<typeof setInterval>;
   private dispatcher = new Dispatcher();
 
-  /** Tracks the last processed review comment ID per PR key to avoid re-processing */
-  private lastProcessedCommentIds = new Map<string, number>();
+  /** Tracks the last processed review comment timestamp per PR key to avoid re-processing */
+  private lastProcessedTimestamps = new Map<string, string>();
 
   constructor(
     private config: Config,
@@ -41,14 +41,14 @@ export class PRMonitor {
     if (this.reviewTimer) clearInterval(this.reviewTimer);
   }
 
-  /** Mark a PR's review comments as processed up to the given comment ID */
-  markReviewProcessed(prKey: string, latestCommentId: number): void {
-    this.lastProcessedCommentIds.set(prKey, latestCommentId);
+  /** Mark a PR's review comments as processed up to the given timestamp */
+  markReviewProcessed(prKey: string, latestTimestamp: string): void {
+    this.lastProcessedTimestamps.set(prKey, latestTimestamp);
   }
 
-  /** Get the last processed comment ID for a PR (for testing/inspection) */
-  getLastProcessedCommentId(prKey: string): number | undefined {
-    return this.lastProcessedCommentIds.get(prKey);
+  /** Get the last processed timestamp for a PR (for testing/inspection) */
+  getLastProcessedTimestamp(prKey: string): string | undefined {
+    return this.lastProcessedTimestamps.get(prKey);
   }
 
   async check(): Promise<{ repo: string; pr: number; failures: string[] }[]> {
@@ -81,10 +81,10 @@ export class PRMonitor {
         repo.owner,
         repo.repo,
         this.config.labels.inProgress,
-        this.lastProcessedCommentIds,
+        this.lastProcessedTimestamps,
       );
 
-      for (const { pr, comments, latestCommentId } of prsWithFeedback) {
+      for (const { pr, comments, latestTimestamp } of prsWithFeedback) {
         let diff = "";
         try {
           diff = await this.github.fetchPRDiff(pr.owner, pr.repo, pr.number);
@@ -99,13 +99,13 @@ export class PRMonitor {
           pr: pr.number,
           prKey: pr.key,
           commentCount: comments.length,
-          latestCommentId,
+          latestTimestamp,
           prompt,
           headRef: pr.headRef,
         });
 
         this.logger?.info(
-          { pr: pr.key, newComments: comments.length, latestCommentId },
+          { pr: pr.key, newComments: comments.length, latestTimestamp },
           "PR review feedback detected",
         );
       }

@@ -143,15 +143,13 @@ export class GitHubClient {
       pullRequestReviewId: null,
     }));
 
-    // Use a large offset to avoid ID collisions with inline/issue comment IDs
-    const REVIEW_ID_OFFSET = 10_000_000_000;
     const reviewBodies: ReviewComment[] = reviews
       .filter((r) => r.body && r.body.trim().length > 0)
       .map((r) => ({
-        id: r.id + REVIEW_ID_OFFSET,
+        id: r.id,
         body: r.body!,
         user: r.user?.login ?? "unknown",
-        createdAt: r.submitted_at ?? r.commit_id ?? new Date().toISOString(),
+        createdAt: r.submitted_at ?? new Date().toISOString(),
         pullRequestReviewId: r.id,
       }));
 
@@ -170,7 +168,7 @@ export class GitHubClient {
     owner: string,
     repo: string,
     label: string,
-    lastProcessedCommentIds: Map<string, number>,
+    lastProcessedTimestamps: Map<string, string>,
   ): Promise<PRWithReviewFeedback[]> {
     const prs = await this.fetchPRsWithLabel(owner, repo, label);
     const results: PRWithReviewFeedback[] = [];
@@ -179,14 +177,15 @@ export class GitHubClient {
       const comments = await this.fetchPRReviewComments(owner, repo, pr.number);
       if (comments.length === 0) continue;
 
-      const latestCommentId = Math.max(...comments.map((c) => c.id));
-      const lastProcessed = lastProcessedCommentIds.get(pr.key) ?? 0;
+      const latestTimestamp = comments.reduce((latest, c) =>
+        c.createdAt > latest ? c.createdAt : latest, "");
+      const lastProcessed = lastProcessedTimestamps.get(pr.key) ?? "";
 
-      if (latestCommentId > lastProcessed) {
-        // Only include comments newer than the last processed one
-        const newComments = comments.filter((c) => c.id > lastProcessed);
+      if (latestTimestamp > lastProcessed) {
+        // Only include comments newer than the last processed timestamp
+        const newComments = comments.filter((c) => c.createdAt > lastProcessed);
         if (newComments.length > 0) {
-          results.push({ pr, comments: newComments, latestCommentId });
+          results.push({ pr, comments: newComments, latestTimestamp });
         }
       }
     }

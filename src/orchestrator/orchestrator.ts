@@ -207,7 +207,7 @@ export class Orchestrator {
     this.sseHub.broadcast("agent:started", { runId, issueKey: prRunKey, provider: entry.provider });
 
     // Mark these comments as processed immediately to avoid re-dispatch
-    this.prMonitor.markReviewProcessed(result.prKey, result.latestCommentId);
+    this.prMonitor.markReviewProcessed(result.prKey, result.latestTimestamp);
 
     const workDir = this.deps.workspace?.ensure(prRunKey);
 
