@@ -797,4 +797,137 @@ describe("Orchestrator", () => {
     expect(failedCall).toBeDefined();
     expect(failedCall![1]).toEqual(expect.objectContaining({ error: "boom" }));
   });
+
+  it("posts a re-review comment on the PR after successful review feedback run", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    // Set up review feedback results
+    mockGitHub.fetchPRsWithReviewFeedback.mockResolvedValue([
+      {
+        pr: { key: "o/r#5", owner: "o", repo: "r", number: 5, title: "Test PR", headRef: "fix-branch", state: "open", labels: ["oneagent-working"] },
+        comments: [{ id: 100, body: "Please fix the typo", path: "src/index.ts", user: "reviewer", createdAt: "2026-01-01T00:00:00Z", pullRequestReviewId: 1 }],
+        latestCommentId: 100,
+      },
+    ]);
+
+    const mockStream = (async function* () {
+      yield { type: "text", text: "Fixed the typo in src/index.ts" };
+      yield { type: "done", usage: { inputTokens: 50, outputTokens: 25 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+        sseHub: makeMockSSEHub(),
+      } as any,
+    );
+
+    await orch.tickReviewFeedback();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Should post a comment on the PR notifying the reviewer
+    expect(mockGitHub.addComment).toHaveBeenCalledWith(
+      "o", "r", 5,
+      expect.stringContaining("I've addressed the review feedback and pushed a fix. Ready for re-review."),
+    );
+    // Should include the agent's summary text
+    expect(mockGitHub.addComment).toHaveBeenCalledWith(
+      "o", "r", 5,
+      expect.stringContaining("Fixed the typo in src/index.ts"),
+    );
+  });
+
+  it("posts a re-review comment without summary when agent produces no text", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    mockGitHub.fetchPRsWithReviewFeedback.mockResolvedValue([
+      {
+        pr: { key: "o/r#6", owner: "o", repo: "r", number: 6, title: "Silent PR", headRef: "silent-branch", state: "open", labels: ["oneagent-working"] },
+        comments: [{ id: 200, body: "Fix this", path: "src/app.ts", user: "reviewer", createdAt: "2026-01-01T00:00:00Z", pullRequestReviewId: 2 }],
+        latestCommentId: 200,
+      },
+    ]);
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+        sseHub: makeMockSSEHub(),
+      } as any,
+    );
+
+    await orch.tickReviewFeedback();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Should post just the base message without a summary section
+    expect(mockGitHub.addComment).toHaveBeenCalledWith(
+      "o", "r", 6,
+      "I've addressed the review feedback and pushed a fix. Ready for re-review.",
+    );
+  });
+
+  it("does not post a re-review comment when review feedback run fails", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    mockGitHub.fetchPRsWithReviewFeedback.mockResolvedValue([
+      {
+        pr: { key: "o/r#7", owner: "o", repo: "r", number: 7, title: "Failing PR", headRef: "fail-branch", state: "open", labels: ["oneagent-working"] },
+        comments: [{ id: 300, body: "Fix this", path: "src/broken.ts", user: "reviewer", createdAt: "2026-01-01T00:00:00Z", pullRequestReviewId: 3 }],
+        latestCommentId: 300,
+      },
+    ]);
+
+    (mockRunFn as any).mockRejectedValue(new Error("agent crashed"));
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+        sseHub: makeMockSSEHub(),
+      } as any,
+    );
+
+    await orch.tickReviewFeedback();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Should NOT post a comment when the run fails
+    expect(mockGitHub.addComment).not.toHaveBeenCalled();
+  });
 });
