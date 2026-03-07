@@ -7,6 +7,7 @@ import { issuesRoute, type IssuesContext } from "./routes/issues.js";
 import { settingsRoute } from "./routes/settings.js";
 import { planningRoute, type PlanningContext } from "./routes/planning.js";
 import { requestLogger } from "../middleware/request-logger.js";
+import { healthRoute } from "./routes/health.js";
 import type { Config } from "../config/schema.js";
 
 export interface FullAppContext {
@@ -29,6 +30,7 @@ export function createApp(ctx: AppContext | FullAppContext): Hono {
     app.use("*", requestLogger(ctx.logger));
   }
 
+  app.route("/", healthRoute());
   app.route("/api/v1", apiRoutes(appCtx));
   app.route("/", dashboardRoute(appCtx));
 
