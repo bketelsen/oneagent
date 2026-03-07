@@ -185,6 +185,9 @@ export class Orchestrator {
       lastActivity: new Date(),
       retryCount: 0,
       abortController,
+      currentAgent: "coder",
+      lastActivityDescription: "Starting...",
+      toolCallCount: 0,
     };
 
     this.state.add(prRunKey, entry);
@@ -245,6 +248,22 @@ export class Orchestrator {
       for await (const chunk of agentRun.stream) {
         stallDetector.activity();
         this.state.updateActivity(prRunKey);
+
+        const entry = this.state.get(prRunKey);
+        if (entry) {
+          if (chunk.type === "tool_call") {
+            const toolChunk = chunk as unknown as { toolName?: string };
+            entry.lastActivityDescription = `Called ${toolChunk.toolName ?? "unknown"}`;
+            entry.toolCallCount++;
+          } else if (chunk.type === "handoff") {
+            const handoffChunk = chunk as unknown as { toAgent: string };
+            entry.currentAgent = handoffChunk.toAgent;
+          } else if (chunk.type === "text") {
+            const textChunk = chunk as unknown as { content?: string };
+            const content = textChunk.content ?? "";
+            entry.lastActivityDescription = content.length > 80 ? content.slice(0, 80) : (content || "Thinking...");
+          }
+        }
 
         this.sseHub.emit("sse", {
           type: `agent:${chunk.type}`,
@@ -312,6 +331,9 @@ export class Orchestrator {
       lastActivity: new Date(),
       retryCount: this.retryQueue.getRetryCount(issue.key),
       abortController,
+      currentAgent: "coder",
+      lastActivityDescription: "Starting...",
+      toolCallCount: 0,
     };
 
     this.state.add(issue.key, entry);
@@ -371,6 +393,22 @@ export class Orchestrator {
       for await (const chunk of agentRun.stream) {
         stallDetector.activity();
         this.state.updateActivity(issue.key);
+
+        const entry = this.state.get(issue.key);
+        if (entry) {
+          if (chunk.type === "tool_call") {
+            const toolChunk = chunk as unknown as { toolName?: string };
+            entry.lastActivityDescription = `Called ${toolChunk.toolName ?? "unknown"}`;
+            entry.toolCallCount++;
+          } else if (chunk.type === "handoff") {
+            const handoffChunk = chunk as unknown as { toAgent: string };
+            entry.currentAgent = handoffChunk.toAgent;
+          } else if (chunk.type === "text") {
+            const textChunk = chunk as unknown as { content?: string };
+            const content = textChunk.content ?? "";
+            entry.lastActivityDescription = content.length > 80 ? content.slice(0, 80) : (content || "Thinking...");
+          }
+        }
 
         this.sseHub.emit("sse", {
           type: `agent:${chunk.type}`,

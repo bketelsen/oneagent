@@ -7,6 +7,9 @@ export interface RunEntry {
   lastActivity: Date;
   retryCount: number;
   abortController?: AbortController;
+  currentAgent: string;
+  lastActivityDescription: string;
+  toolCallCount: number;
 }
 
 export class RunState {
