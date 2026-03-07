@@ -22,7 +22,7 @@ export function settingsRoute(getConfig: () => Config): Hono {
     return c.html(
       <Layout title="Settings">
         <h1 class="text-2xl font-bold mb-4">Settings</h1>
-        <pre class="bg-gray-800 rounded p-4 text-sm overflow-x-auto">
+        <pre class="bg-gray-100 dark:bg-gray-800 rounded p-4 text-sm overflow-x-auto">
           {JSON.stringify(safeConfig, null, 2)}
         </pre>
       </Layout>
