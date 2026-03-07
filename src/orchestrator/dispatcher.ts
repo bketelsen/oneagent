@@ -1,7 +1,8 @@
 import type { Issue, PullRequest } from "../github/types.js";
 
 export class Dispatcher {
-  buildPrompt(issue: Issue): string {
+  buildPrompt(issue: Issue, workDir?: string): string {
+    const workDirLine = workDir ? `\n**Workspace:** ${workDir}` : "";
     return `## GitHub Issue: ${issue.key}
 
 **Title:** ${issue.title}
@@ -11,7 +12,7 @@ ${issue.body}
 
 **Repository:** ${issue.owner}/${issue.repo}
 **Issue Number:** #${issue.number}
-**Labels:** ${issue.labels.join(", ")}
+**Labels:** ${issue.labels.join(", ")}${workDirLine}
 
 Work on this issue. Read the codebase, understand the requirements, implement the solution, write tests, and prepare for a pull request.`;
   }

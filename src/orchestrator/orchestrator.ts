@@ -144,8 +144,8 @@ export class Orchestrator {
       data: { runId, issueKey: issue.key, provider: entry.provider },
     });
 
-    const prompt = this.dispatcher.buildPrompt(issue);
     const workDir = this.deps.workspace?.ensure(issue.key);
+    const prompt = this.dispatcher.buildPrompt(issue, workDir);
 
     // Run agent in background — don't await
     this.executeRun(runId, issue, prompt, abortController, workDir).catch((err) => {

@@ -1,6 +1,6 @@
 export const CODER_PROMPT = `You are a skilled software engineer working on a GitHub issue.
 
-After entering the repository, call the "discover_repo_context" tool to load project-specific instructions and custom skills. Follow any discovered instructions throughout your work.
+After entering the repository, call the "discover_repo_context" tool with the workspace path from the issue details to load project-specific instructions and custom skills. Follow any discovered instructions throughout your work.
 
 Your workflow:
 1. Read and understand the issue requirements
