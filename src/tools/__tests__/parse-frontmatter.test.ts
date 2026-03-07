@@ -42,4 +42,15 @@ Body.`;
     const result = parseFrontmatter(input);
     expect(result.attributes).toEqual({ name: "skill", description: "desc", custom: "value" });
   });
+
+  it("handles malformed YAML gracefully", () => {
+    const input = `---
+key: [unterminated
+---
+
+Body after bad yaml.`;
+    const result = parseFrontmatter(input);
+    expect(result.attributes).toEqual({});
+    expect(result.body.trim()).toBe("Body after bad yaml.");
+  });
 });
