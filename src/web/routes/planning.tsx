@@ -49,6 +49,18 @@ function planningScript(id: string): string {
     const form = document.getElementById('chat-form');
     const publishBtn = document.getElementById('publish-btn');
 
+    function renderMd(text) {
+      if (typeof marked !== 'undefined' && marked.parse) {
+        return marked.parse(text);
+      }
+      return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>');
+    }
+
+    // Render server-side history messages through marked on page load
+    document.querySelectorAll('[data-md]').forEach(el => {
+      el.innerHTML = renderMd(el.getAttribute('data-md'));
+    });
+
     form.onsubmit = async (e) => {
       e.preventDefault();
       const input = form.message;
@@ -56,7 +68,7 @@ function planningScript(id: string): string {
       if (!msg.trim()) return;
       const userDiv = document.createElement('div');
       userDiv.className = 'text-blue-300';
-      userDiv.innerHTML = '<span class="font-semibold">user:</span> ' + msg;
+      userDiv.innerHTML = '<span class="font-semibold">user:</span> ' + msg.replace(/&/g,'&amp;').replace(/</g,'&lt;');
       chatEl.appendChild(userDiv);
       input.value = '';
       const sendBtn = form.querySelector('button[type="submit"]');
@@ -70,8 +82,8 @@ function planningScript(id: string): string {
         });
         const data = await res.json();
         const assistDiv = document.createElement('div');
-        assistDiv.className = 'text-gray-300';
-        assistDiv.innerHTML = '<span class="font-semibold">assistant:</span> ' + (data.response || '');
+        assistDiv.className = 'text-gray-300 chat-md';
+        assistDiv.innerHTML = '<span class="font-semibold">assistant:</span> ' + renderMd(data.response || '');
         chatEl.appendChild(assistDiv);
         chatEl.scrollTop = chatEl.scrollHeight;
         if (data.plan) {
@@ -174,9 +186,16 @@ export function planningRoute(ctx: PlanningContext): Hono {
             <h2 class="text-lg font-semibold mb-2">Chat</h2>
             <div id="chat" class="bg-gray-800 rounded p-4 max-h-[60vh] overflow-y-auto mb-4 space-y-3">
               {history.map((msg) => (
-                <div class={msg.role === "user" ? "text-blue-300" : "text-gray-300"}>
-                  <span class="font-semibold">{msg.role}:</span> {msg.content}
-                </div>
+                msg.role === "user" ? (
+                  <div class="text-blue-300">
+                    <span class="font-semibold">user:</span> {msg.content}
+                  </div>
+                ) : (
+                  <div class="text-gray-300 chat-md">
+                    <span class="font-semibold">assistant:</span>{" "}
+                    <span data-md={msg.content}>{msg.content}</span>
+                  </div>
+                )
               ))}
             </div>
             <form id="chat-form" class="flex gap-2">
