@@ -2,8 +2,8 @@ github:
   token: $(gh auth token)
   repos:
     - owner: bketelsen
-      repo: gopilot-test-target
-      labels: [oneagent]
+      repo: oneagent
+      labels: [dogfood]
 
 agent:
   provider: claude-code
