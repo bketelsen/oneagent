@@ -13,13 +13,13 @@ function renderPlan(plan: any) {
   return (
     <div class="space-y-4">
       <h3 class="text-lg font-bold">{plan.title}</h3>
-      <p class="text-gray-400">{plan.description}</p>
+      <p class="text-gray-500 dark:text-gray-400">{plan.description}</p>
       {plan.phases.map((phase: any) => (
-        <div class="border border-gray-700 rounded p-3">
+        <div class="border border-gray-200 dark:border-gray-700 rounded p-3">
           <h4 class="font-semibold text-blue-300 mb-2">{phase.name}</h4>
           <div class="space-y-2">
             {phase.tasks.map((task: any) => (
-              <div class="bg-gray-900 rounded p-2">
+              <div class="bg-gray-50 dark:bg-gray-900 rounded p-2">
                 <div class="flex items-center gap-2">
                   <span class={`text-xs px-1.5 py-0.5 rounded ${
                     task.complexity === "low" ? "bg-green-900 text-green-300" :
@@ -32,7 +32,7 @@ function renderPlan(plan: any) {
                   )}
                 </div>
                 {task.dependsOn.length > 0 && (
-                  <div class="text-xs text-gray-500 mt-1">Depends on: {task.dependsOn.join(", ")}</div>
+                  <div class="text-xs text-gray-400 dark:text-gray-500 mt-1">Depends on: {task.dependsOn.join(", ")}</div>
                 )}
               </div>
             ))}
@@ -82,7 +82,7 @@ function planningScript(id: string): string {
         });
         const data = await res.json();
         const assistDiv = document.createElement('div');
-        assistDiv.className = 'text-gray-300 chat-md';
+        assistDiv.className = 'text-gray-700 dark:text-gray-300 chat-md';
         assistDiv.innerHTML = '<span class="font-semibold">assistant:</span> ' + renderMd(data.response || '');
         chatEl.appendChild(assistDiv);
         chatEl.scrollTop = chatEl.scrollHeight;
@@ -123,7 +123,7 @@ export function planningRoute(ctx: PlanningContext): Hono {
         <div class="flex justify-between items-center mb-6">
           <h1 class="text-2xl font-bold">Planning Sessions</h1>
           <form method="post" action="/planning/new" class="flex gap-2 items-center">
-            <select name="repo" class="bg-gray-700 rounded px-3 py-2 text-sm">
+            <select name="repo" class="bg-gray-100 dark:bg-gray-700 rounded px-3 py-2 text-sm">
               {ctx.repos.map((r) => (
                 <option value={`${r.owner}/${r.repo}`}>{r.owner}/{r.repo}</option>
               ))}
@@ -135,23 +135,23 @@ export function planningRoute(ctx: PlanningContext): Hono {
         </div>
         <div class="space-y-2">
           {sessions.map((s: PlanningSessionRow) => (
-            <a href={`/planning/${s.id}`} class="block bg-gray-800 rounded p-4 hover:bg-gray-700">
+            <a href={`/planning/${s.id}`} class="block bg-gray-100 dark:bg-gray-800 rounded p-4 hover:bg-gray-200 dark:hover:bg-gray-700">
               <div class="flex justify-between items-center">
                 <div class="font-medium">{s.id.slice(0, 8)}...</div>
                 <div class="flex gap-2 items-center">
                   {s.repo && (
-                    <span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">{s.repo}</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">{s.repo}</span>
                   )}
                   {s.status && (
                     <span class={`text-xs px-2 py-0.5 rounded ${
                       s.status === "published" ? "bg-green-900 text-green-300" :
                       s.status === "approved" ? "bg-blue-900 text-blue-300" :
-                      "bg-gray-700 text-gray-400"
+                      "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
                     }`}>{s.status}</span>
                   )}
                 </div>
               </div>
-              <div class="text-gray-500 text-sm">{s.issueKey ?? "No issue"} — {s.updatedAt}</div>
+              <div class="text-gray-400 dark:text-gray-500 text-sm">{s.issueKey ?? "No issue"} — {s.updatedAt}</div>
             </a>
           ))}
         </div>
@@ -178,13 +178,13 @@ export function planningRoute(ctx: PlanningContext): Hono {
       <Layout title={`Planning: ${id}`}>
         <h1 class="text-xl font-bold mb-1">Planning Session</h1>
         {session?.repo && (
-          <p class="text-gray-400 text-sm mb-4">Repository: <span class="text-blue-300">{session.repo}</span></p>
+          <p class="text-gray-500 dark:text-gray-400 text-sm mb-4">Repository: <span class="text-blue-300">{session.repo}</span></p>
         )}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Chat panel */}
           <div>
             <h2 class="text-lg font-semibold mb-2">Chat</h2>
-            <div id="chat" class="bg-gray-800 rounded p-4 max-h-[60vh] overflow-y-auto mb-4 space-y-3">
+            <div id="chat" class="bg-gray-100 dark:bg-gray-800 rounded p-4 max-h-[60vh] overflow-y-auto mb-4 space-y-3">
               {history.map((msg) => (
                 msg.role === "user" ? (
                   <div class="text-blue-300">
@@ -200,7 +200,7 @@ export function planningRoute(ctx: PlanningContext): Hono {
             </div>
             <form id="chat-form" class="flex gap-2">
               <input type="text" name="message" placeholder="Type a message..."
-                class="flex-1 bg-gray-700 rounded px-4 py-2 text-sm" autocomplete="off" />
+                class="flex-1 bg-gray-100 dark:bg-gray-700 rounded px-4 py-2 text-sm" autocomplete="off" />
               <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">Send</button>
             </form>
           </div>
@@ -218,8 +218,8 @@ export function planningRoute(ctx: PlanningContext): Hono {
                 <span class="text-green-400 text-sm">Published</span>
               )}
             </div>
-            <div id="plan-viewer" class="bg-gray-800 rounded p-4 max-h-[60vh] overflow-y-auto">
-              {plan ? renderPlan(plan) : <p class="text-gray-500">No plan yet. Start chatting to build one.</p>}
+            <div id="plan-viewer" class="bg-gray-100 dark:bg-gray-800 rounded p-4 max-h-[60vh] overflow-y-auto">
+              {plan ? renderPlan(plan) : <p class="text-gray-400 dark:text-gray-500">No plan yet. Start chatting to build one.</p>}
             </div>
           </div>
         </div>
