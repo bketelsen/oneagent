@@ -56,12 +56,35 @@ describe("GET /runs/:id", () => {
     expect(res.status).toBe(200);
 
     const html = await res.text();
-    expect(html).toContain("owner/repo#42");
+    expect(html).toContain('href="https://github.com/owner/repo/issues/42"');
+    expect(html).toContain("#42");
     expect(html).toContain("claude-code");
     expect(html).toContain("running");
     expect(html).toContain("tool_use");
     expect(html).toContain("message");
     expect(html).toContain("run-abc");
+  });
+
+  it("renders issue number as a clickable GitHub link", async () => {
+    const now = new Date().toISOString();
+    runsRepo.insert({
+      id: "run-link",
+      issueKey: "bketelsen/oneagent#79",
+      provider: "claude-code",
+      status: "running",
+      startedAt: now,
+      retryCount: 0,
+    });
+
+    const app = makeApp();
+    const res = await app.request("/runs/run-link");
+    expect(res.status).toBe(200);
+
+    const html = await res.text();
+    expect(html).toContain('href="https://github.com/bketelsen/oneagent/issues/79"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain("#79");
   });
 
   it("returns 404 for unknown run ID", async () => {
