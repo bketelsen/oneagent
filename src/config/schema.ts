@@ -63,6 +63,11 @@ const webSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+const prReviewSchema = z.object({
+  enabled: z.boolean().default(true),
+  pollInterval: z.number().min(5000).default(60000),
+});
+
 const labelsSchema = z.object({
   eligible: z.string().default("oneagent"),
   inProgress: z.string().default("oneagent-working"),
@@ -78,6 +83,7 @@ export const configSchema = z.object({
   workspace: withDefault(workspaceSchema),
   labels: withDefault(labelsSchema),
   web: withDefault(webSchema),
+  prReview: withDefault(prReviewSchema),
 });
 
 export type Config = z.infer<typeof configSchema>;
