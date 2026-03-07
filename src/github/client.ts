@@ -166,6 +166,28 @@ export class GitHubClient {
     return data as unknown as string;
   }
 
+  async findMergedPRForIssue(owner: string, repo: string, issueNumber: number): Promise<{ number: number } | null> {
+    const { data: prs } = await this.octokit.rest.pulls.list({
+      owner, repo, state: "closed", per_page: 100, sort: "updated", direction: "desc",
+    });
+
+    for (const pr of prs) {
+      if (!pr.merged_at) continue;
+      const linked = this.extractLinkedIssueNumbers(pr.body);
+      if (linked.has(issueNumber)) {
+        this.logger.debug({ owner, repo, issueNumber, prNumber: pr.number }, "found merged PR for issue");
+        return { number: pr.number };
+      }
+    }
+
+    return null;
+  }
+
+  async addComment(owner: string, repo: string, issueNumber: number, body: string): Promise<void> {
+    await this.octokit.rest.issues.createComment({ owner, repo, issue_number: issueNumber, body });
+    this.logger.debug({ owner, repo, issueNumber }, "added comment to issue");
+  }
+
   async fetchCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
     const { data } = await this.octokit.rest.checks.listForRef({ owner, repo, ref });
     this.logger.debug({ owner, repo, ref, count: data.check_runs.length }, "fetched check runs");
