@@ -107,6 +107,39 @@ describe("RunsRepo", () => {
     expect(stats.maxDurationMs).toBe(0);
   });
 
+  it("getRunById returns the run when it exists", () => {
+    const startedAt = new Date().toISOString();
+    repo.insert({
+      id: "getrun1",
+      issueKey: "owner/repo#10",
+      provider: "claude-code",
+      model: "opus",
+      status: "running",
+      startedAt,
+      retryCount: 0,
+    });
+    const completedAt = new Date().toISOString();
+    repo.completeRun("getrun1", "completed", completedAt, 7500);
+
+    const run = repo.getRunById("getrun1");
+    expect(run).toBeDefined();
+    expect(run!.id).toBe("getrun1");
+    expect(run!.issueKey).toBe("owner/repo#10");
+    expect(run!.provider).toBe("claude-code");
+    expect(run!.model).toBe("opus");
+    expect(run!.status).toBe("completed");
+    expect(run!.startedAt).toBe(startedAt);
+    expect(run!.completedAt).toBe(completedAt);
+    expect(run!.durationMs).toBe(7500);
+    expect(run!.error).toBeUndefined();
+    expect(run!.retryCount).toBe(0);
+  });
+
+  it("getRunById returns undefined when ID does not exist", () => {
+    const run = repo.getRunById("nonexistent-id");
+    expect(run).toBeUndefined();
+  });
+
   it("lists runs by issue key", () => {
     const now = new Date().toISOString();
     repo.insert({ id: "r1", issueKey: "o/r#1", provider: "claude-code", status: "completed", startedAt: now, retryCount: 0 });

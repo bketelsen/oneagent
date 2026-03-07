@@ -66,6 +66,10 @@ export class RunsRepo {
     return row ? this.mapRow(row) : undefined;
   }
 
+  getRunById(id: string): RunRow | undefined {
+    return this.getById(id);
+  }
+
   listByIssue(issueKey: string): RunRow[] {
     return (this.db.prepare("SELECT * FROM runs WHERE issue_key = ? ORDER BY started_at DESC").all(issueKey) as any[]).map(this.mapRow);
   }
