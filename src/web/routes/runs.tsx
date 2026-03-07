@@ -33,6 +33,24 @@ export function runsRoute(ctx: RunsContext): Hono {
     const runTokens = ctx.metricsRepo?.tokensByRun(id) ?? { tokensIn: 0, tokensOut: 0 };
     const runCost = getCostEstimate(runTokens.tokensIn, runTokens.tokensOut);
 
+    function renderIssueLink(issueKey: string) {
+      const match = issueKey.match(/^(.+?)\/(.+?)#(\d+)$/);
+      if (match) {
+        const [, owner, repo, number] = match;
+        return (
+          <a
+            href={`https://github.com/${owner}/${repo}/issues/${number}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="hover:underline"
+          >
+            #{number}
+          </a>
+        );
+      }
+      return issueKey;
+    }
+
     const statusColor =
       run.status === "running" ? "text-green-400" :
       run.status === "failed" ? "text-red-400" :
@@ -54,23 +72,7 @@ export function runsRoute(ctx: RunsContext): Hono {
             <div>
               <div class="text-sm text-gray-400">Issue</div>
               <div class="text-blue-400">
-                {(() => {
-                  const match = run.issueKey.match(/^(.+?)\/(.+?)#(\d+)$/);
-                  if (match) {
-                    const [, owner, repo, number] = match;
-                    return (
-                      <a
-                        href={`https://github.com/${owner}/${repo}/issues/${number}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="hover:underline"
-                      >
-                        #{number}
-                      </a>
-                    );
-                  }
-                  return run.issueKey;
-                })()}
+                {renderIssueLink(run.issueKey)}
               </div>
             </div>
             <div>
