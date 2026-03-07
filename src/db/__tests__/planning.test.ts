@@ -42,6 +42,19 @@ describe("PlanningRepo", () => {
     expect(sessions).toHaveLength(2);
   });
 
+  it("saves and loads repo context", () => {
+    repo.save("s1", [], undefined, "owner/repo");
+    repo.saveContext("s1", "## CLAUDE.md\nUse vitest");
+    const ctx = repo.loadContext("s1");
+    expect(ctx).toBe("## CLAUDE.md\nUse vitest");
+  });
+
+  it("list includes repo field", () => {
+    repo.save("s1", [], undefined, "owner/repo");
+    const sessions = repo.list();
+    expect(sessions[0].repo).toBe("owner/repo");
+  });
+
   describe("plan storage", () => {
     it("saves and loads a plan", () => {
       const plan = {
