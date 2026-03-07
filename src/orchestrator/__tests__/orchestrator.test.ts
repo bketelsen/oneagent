@@ -41,6 +41,6 @@ describe("Orchestrator", () => {
   it("tick fetches issues from all repos", async () => {
     const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
     await orch.tick();
-    expect(mockGitHub.fetchIssues).toHaveBeenCalledWith("o", "r", "oneagent");
+    expect(mockGitHub.fetchIssues).toHaveBeenCalledWith("o", "r", ["oneagent"]);
   });
 });

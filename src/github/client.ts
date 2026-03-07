@@ -21,16 +21,35 @@ export class GitHubClient {
     return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
   }
 
-  async fetchIssues(owner: string, repo: string, label: string): Promise<Issue[]> {
-    const [{ data }, { data: prs }] = await Promise.all([
-      this.octokit.rest.issues.listForRepo({
-        owner, repo, labels: label, state: "open", per_page: 100,
-      }),
+  async fetchIssues(owner: string, repo: string, labels: string | string[]): Promise<Issue[]> {
+    const labelList = Array.isArray(labels) ? labels : [labels];
+
+    const [issueResults, { data: prs }] = await Promise.all([
+      Promise.all(
+        labelList.map((label) =>
+          this.octokit.rest.issues.listForRepo({
+            owner, repo, labels: label, state: "open", per_page: 100,
+          }),
+        ),
+      ),
       this.octokit.rest.pulls.list({
         owner, repo, state: "open", per_page: 100,
       }),
     ]);
-    this.logger.debug({ owner, repo, label, issueCount: data.length, prCount: prs.length }, "fetched issues and PRs");
+
+    // Merge and deduplicate issues from all label queries
+    const seen = new Set<number>();
+    const data: typeof issueResults[0]["data"] = [];
+    for (const result of issueResults) {
+      for (const issue of result.data) {
+        if (!seen.has(issue.number)) {
+          seen.add(issue.number);
+          data.push(issue);
+        }
+      }
+    }
+
+    this.logger.debug({ owner, repo, labels: labelList, issueCount: data.length, prCount: prs.length }, "fetched issues and PRs");
 
     const linkedIssues = new Set<number>();
     for (const pr of prs) {

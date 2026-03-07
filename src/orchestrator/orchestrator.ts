@@ -74,10 +74,8 @@ export class Orchestrator {
   async tick(): Promise<void> {
     const allIssues: Issue[] = [];
     for (const repo of this.config.github.repos) {
-      for (const label of repo.labels) {
-        const issues = await this.github.fetchIssues(repo.owner, repo.repo, label);
-        allIssues.push(...issues);
-      }
+      const issues = await this.github.fetchIssues(repo.owner, repo.repo, repo.labels);
+      allIssues.push(...issues);
     }
 
     const retryKeys = this.retryQueue.due();
