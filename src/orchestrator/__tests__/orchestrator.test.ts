@@ -28,12 +28,23 @@ function makeMockGitHub() {
     hasOpenPRForIssue: vi.fn().mockResolvedValue(false),
     parseDependencies: vi.fn().mockReturnValue([]),
     isIssueClosed: vi.fn().mockResolvedValue(true),
+    fetchIssueState: vi.fn().mockResolvedValue({ state: "open", stateReason: null }),
+    fetchIssuesWithLabel: vi.fn().mockResolvedValue([]),
     issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
     parseIssueKey: (key: string) => {
       const match = key.match(/^(.+)\/(.+)#(\d+)$/);
       if (!match) return null;
       return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
     },
+  };
+}
+
+function makeMockRunsRepo() {
+  return {
+    insert: vi.fn(),
+    completeRun: vi.fn(),
+    updateStatus: vi.fn(),
+    listNonTerminal: vi.fn().mockReturnValue([]),
   };
 }
 
@@ -891,6 +902,244 @@ describe("Orchestrator", () => {
       "o", "r", 6,
       "I've addressed the review feedback and pushed a fix. Ready for re-review.",
     );
+  });
+
+  describe("reconcileStartup", () => {
+    it("marks DB run as completed when issue has a merged PR", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockRunsRepo.listNonTerminal.mockReturnValue([
+        { id: "run1", issueKey: "o/r#1", provider: "claude-code", status: "running", startedAt: new Date().toISOString(), retryCount: 0 },
+      ]);
+      mockGitHub.findMergedPRForIssue.mockResolvedValue({ number: 42 });
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      await orch.reconcileStartup();
+
+      expect(mockRunsRepo.updateStatus).toHaveBeenCalledWith("run1", "completed", expect.any(String));
+      expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 1, "oneagent-working");
+    });
+
+    it("marks DB run as completed when issue is closed", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockRunsRepo.listNonTerminal.mockReturnValue([
+        { id: "run2", issueKey: "o/r#2", provider: "claude-code", status: "completed", startedAt: new Date().toISOString(), retryCount: 0 },
+      ]);
+      mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+      mockGitHub.fetchIssueState.mockResolvedValue({ state: "closed", stateReason: "completed" });
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      await orch.reconcileStartup();
+
+      expect(mockRunsRepo.updateStatus).toHaveBeenCalledWith("run2", "completed", expect.any(String));
+      expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 2, "oneagent-working");
+    });
+
+    it("marks orphaned running run as failed when issue is still open", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockRunsRepo.listNonTerminal.mockReturnValue([
+        { id: "run3", issueKey: "o/r#3", provider: "claude-code", status: "running", startedAt: new Date().toISOString(), retryCount: 0 },
+      ]);
+      mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+      mockGitHub.fetchIssueState.mockResolvedValue({ state: "open", stateReason: null });
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      await orch.reconcileStartup();
+
+      expect(mockRunsRepo.updateStatus).toHaveBeenCalledWith("run3", "failed", expect.any(String), "abandoned: orchestrator restarted");
+      expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 3, "oneagent-working");
+    });
+
+    it("skips runs that are actively in memory", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockRunsRepo.listNonTerminal.mockReturnValue([
+        { id: "run4", issueKey: "o/r#4", provider: "claude-code", status: "running", startedAt: new Date().toISOString(), retryCount: 0 },
+      ]);
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      // Simulate an active in-memory run
+      orch.state.add("o/r#4", {
+        runId: "run4", issueKey: "o/r#4", provider: "claude-code",
+        startedAt: new Date(), lastActivity: new Date(), retryCount: 0,
+        currentAgent: "coder", lastActivityDescription: "Working...", toolCallCount: 0,
+      });
+
+      await orch.reconcileStartup();
+
+      expect(mockRunsRepo.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it("removes stale inProgress label from closed issues", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockGitHub.fetchIssuesWithLabel.mockResolvedValue([
+        { number: 10, state: "closed", labels: ["oneagent-working"] },
+      ]);
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      await orch.reconcileStartup();
+
+      expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 10, "oneagent-working");
+    });
+
+    it("removes stale inProgress label from open issue with merged PR", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockGitHub.fetchIssuesWithLabel.mockResolvedValue([
+        { number: 11, state: "open", labels: ["oneagent-working"] },
+      ]);
+      mockGitHub.findMergedPRForIssue.mockResolvedValue({ number: 50 });
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      await orch.reconcileStartup();
+
+      expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 11, "oneagent-working");
+    });
+
+    it("removes stale inProgress label from open issue with no active run and no merged PR", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockGitHub.fetchIssuesWithLabel.mockResolvedValue([
+        { number: 12, state: "open", labels: ["oneagent-working"] },
+      ]);
+      mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      await orch.reconcileStartup();
+
+      expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 12, "oneagent-working");
+    });
+
+    it("keeps inProgress label when there is an active in-memory run", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockGitHub.fetchIssuesWithLabel.mockResolvedValue([
+        { number: 13, state: "open", labels: ["oneagent-working"] },
+      ]);
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      orch.state.add("o/r#13", {
+        runId: "run13", issueKey: "o/r#13", provider: "claude-code",
+        startedAt: new Date(), lastActivity: new Date(), retryCount: 0,
+        currentAgent: "coder", lastActivityDescription: "Working...", toolCallCount: 0,
+      });
+
+      await orch.reconcileStartup();
+
+      expect(mockGitHub.removeLabel).not.toHaveBeenCalledWith("o", "r", 13, "oneagent-working");
+    });
+
+    it("logs corrections count on completion", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      await orch.reconcileStartup();
+
+      expect(mockLogger.info).toHaveBeenCalledWith({ corrected: 0 }, "startup reconciliation complete");
+    });
+
+    it("handles errors in individual run reconciliation gracefully", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockRunsRepo.listNonTerminal.mockReturnValue([
+        { id: "run5", issueKey: "o/r#5", provider: "claude-code", status: "running", startedAt: new Date().toISOString(), retryCount: 0 },
+      ]);
+      mockGitHub.findMergedPRForIssue.mockRejectedValue(new Error("API rate limit"));
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      // Should not throw
+      await orch.reconcileStartup();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ issueKey: "o/r#5", runId: "run5" }),
+        "reconcile: error checking run state",
+      );
+    });
+
+    it("marks run with unparseable key as abandoned", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockRunsRepo = makeMockRunsRepo();
+
+      mockRunsRepo.listNonTerminal.mockReturnValue([
+        { id: "run6", issueKey: "invalid-key", provider: "claude-code", status: "running", startedAt: new Date().toISOString(), retryCount: 0 },
+      ]);
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, runsRepo: mockRunsRepo, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      await orch.reconcileStartup();
+
+      expect(mockRunsRepo.updateStatus).toHaveBeenCalledWith("run6", "failed", expect.any(String), "abandoned: unparseable issue key");
+    });
+
+    it("works without runsRepo (graceful when optional)", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+
+      const orch = new Orchestrator(mockConfig as any, mockGitHub as any, {
+        config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub(),
+      } as any);
+
+      // Should not throw even without runsRepo
+      await orch.reconcileStartup();
+
+      expect(mockLogger.info).toHaveBeenCalledWith({ corrected: 0 }, "startup reconciliation complete");
+    });
   });
 
   it("does not post a re-review comment when review feedback run fails", async () => {

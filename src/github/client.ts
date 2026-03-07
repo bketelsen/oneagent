@@ -276,6 +276,39 @@ export class GitHubClient {
     }));
   }
 
+  /**
+   * Return the state ("open" | "closed") and state_reason for an issue.
+   */
+  async fetchIssueState(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<{ state: string; stateReason: string | null }> {
+    const { data } = await this.octokit.rest.issues.get({ owner, repo, issue_number: number });
+    return { state: data.state, stateReason: (data as any).state_reason ?? null };
+  }
+
+  /**
+   * List all open issues that carry a specific label. Useful for finding
+   * stale `oneagent-working` labels that should be cleaned up.
+   */
+  async fetchIssuesWithLabel(
+    owner: string,
+    repo: string,
+    label: string,
+  ): Promise<{ number: number; state: string; labels: string[] }[]> {
+    const { data } = await this.octokit.rest.issues.listForRepo({
+      owner, repo, labels: label, state: "all", per_page: 100,
+    });
+    return data
+      .filter((i) => !i.pull_request)
+      .map((i) => ({
+        number: i.number,
+        state: i.state,
+        labels: i.labels.map((l) => (typeof l === "string" ? l : l.name ?? "")),
+      }));
+  }
+
   async fetchCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
     const { data } = await this.octokit.rest.checks.listForRef({ owner, repo, ref });
     this.logger.debug({ owner, repo, ref, count: data.check_runs.length }, "fetched check runs");

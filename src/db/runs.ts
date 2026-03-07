@@ -98,6 +98,20 @@ export class RunsRepo {
     return (this.db.prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT ?").all(limit) as any[]).map(this.mapRow);
   }
 
+  /**
+   * Return all runs in non-terminal status (running / completed) that may
+   * need reconciliation against the actual GitHub state.
+   */
+  listNonTerminal(): RunRow[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT * FROM runs WHERE status IN ('running', 'completed') ORDER BY started_at DESC",
+        )
+        .all() as any[]
+    ).map(this.mapRow);
+  }
+
   private mapRow(row: any): RunRow {
     return {
       id: row.id,

@@ -73,7 +73,7 @@ GitHub Issues (poll) → Orchestrator → one-agent-sdk run()
 **Poll-Dispatch-Reconcile loop:**
 1. **Poll** — fetch labeled issues from configured repos
 2. **Dispatch** — start agent runs for new issues (respecting concurrency)
-3. **Reconcile** — check for stale runs, abort if needed
+3. **Reconcile** — check for stale runs, abort if needed; on startup, reconcile DB/labels with GitHub
 
 **Multi-agent handoffs:** The coder agent can hand off to specialist agents (TDD, debugger, reviewer, PR workflow, planner) which hand back when done.
 
@@ -84,6 +84,7 @@ GitHub Issues (poll) → Orchestrator → one-agent-sdk run()
 - **PR review iteration** — polls open PRs for review comments and dispatches agents to address feedback (configurable via `prReview.enabled`)
 - **Auto-rebase** — after a run completes, conflicting open PRs are automatically rebased onto main
 - **Label cleanup** — `oneagent-working` label removed on completion; eligible label removed on success
+- **Startup reconciliation** — on startup, reconciles internal DB state with GitHub: marks orphaned runs as completed/failed, removes stale `oneagent-working` labels from closed issues and issues with merged PRs
 
 ## Dashboard
 

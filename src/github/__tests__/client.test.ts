@@ -583,6 +583,70 @@ describe("fetchOpenPRs", () => {
   });
 });
 
+describe("fetchIssueState", () => {
+  it("returns state and stateReason for an issue", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        issues: {
+          get: vi.fn().mockResolvedValue({ data: { state: "closed", state_reason: "completed" } }),
+        },
+      },
+    };
+    const result = await client.fetchIssueState("owner", "repo", 1);
+    expect(result).toEqual({ state: "closed", stateReason: "completed" });
+  });
+
+  it("returns null stateReason when not present", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        issues: {
+          get: vi.fn().mockResolvedValue({ data: { state: "open" } }),
+        },
+      },
+    };
+    const result = await client.fetchIssueState("owner", "repo", 2);
+    expect(result).toEqual({ state: "open", stateReason: null });
+  });
+});
+
+describe("fetchIssuesWithLabel", () => {
+  it("returns issues with the specified label, filtering out PRs", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        issues: {
+          listForRepo: vi.fn().mockResolvedValue({
+            data: [
+              { number: 1, state: "open", labels: [{ name: "oneagent-working" }] },
+              { number: 2, state: "closed", labels: [{ name: "oneagent-working" }] },
+              { number: 3, state: "open", labels: [{ name: "oneagent-working" }], pull_request: { url: "..." } },
+            ],
+          }),
+        },
+      },
+    };
+    const issues = await client.fetchIssuesWithLabel("owner", "repo", "oneagent-working");
+    expect(issues).toHaveLength(2);
+    expect(issues[0].number).toBe(1);
+    expect(issues[1].number).toBe(2);
+  });
+
+  it("returns empty array when no issues have the label", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        issues: {
+          listForRepo: vi.fn().mockResolvedValue({ data: [] }),
+        },
+      },
+    };
+    const issues = await client.fetchIssuesWithLabel("owner", "repo", "oneagent-working");
+    expect(issues).toHaveLength(0);
+  });
+});
+
 describe("fetchPRMergeableStatus", () => {
   it("returns mergeable status from PR detail", async () => {
     const client = new GitHubClient("fake-token");

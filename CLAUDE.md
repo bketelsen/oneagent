@@ -53,6 +53,7 @@ Config is loaded from `oneagent.yaml` (default path). Schema defined in `src/con
 - **PR review iteration:** When enabled (`prReview.enabled`), polls open PRs for new review comments and dispatches agents to address feedback on the existing branch.
 - **Auto-rebase:** After a run completes, checks other open PRs for merge conflicts and rebases them automatically using authenticated git URLs.
 - **Label cleanup:** Removes `oneagent-working` label on both success and failure; removes eligible label on success.
+- **Startup reconciliation:** `reconcileStartup()` runs on orchestrator `start()` before the first poll. It syncs internal DB state with GitHub: marks orphaned DB runs as completed/failed based on issue/PR status, and removes stale `oneagent-working` labels from closed issues, issues with merged PRs, and issues with no active agent run. The method is idempotent and safe to call multiple times. Key helper methods: `RunsRepo.listNonTerminal()`, `GitHubClient.fetchIssueState()`, `GitHubClient.fetchIssuesWithLabel()`.
 
 ## Database Migrations
 

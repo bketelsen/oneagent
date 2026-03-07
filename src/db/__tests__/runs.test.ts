@@ -130,6 +130,26 @@ describe("RunsRepo", () => {
     expect(counts.running).toBe(0);
   });
 
+  it("listNonTerminal returns running and completed runs", () => {
+    const now = new Date().toISOString();
+    repo.insert({ id: "nt1", issueKey: "o/r#1", provider: "claude-code", status: "running", startedAt: now, retryCount: 0 });
+    repo.insert({ id: "nt2", issueKey: "o/r#2", provider: "claude-code", status: "completed", startedAt: now, retryCount: 0 });
+    repo.insert({ id: "nt3", issueKey: "o/r#3", provider: "claude-code", status: "failed", startedAt: now, retryCount: 0 });
+
+    const nonTerminal = repo.listNonTerminal();
+    expect(nonTerminal).toHaveLength(2);
+    const ids = nonTerminal.map((r) => r.id);
+    expect(ids).toContain("nt1");
+    expect(ids).toContain("nt2");
+    expect(ids).not.toContain("nt3");
+  });
+
+  it("listNonTerminal returns empty array when all runs are terminal", () => {
+    const now = new Date().toISOString();
+    repo.insert({ id: "t1", issueKey: "o/r#1", provider: "claude-code", status: "failed", startedAt: now, retryCount: 0 });
+    expect(repo.listNonTerminal()).toHaveLength(0);
+  });
+
   it("lists runs by issue key", () => {
     const now = new Date().toISOString();
     repo.insert({ id: "r1", issueKey: "o/r#1", provider: "claude-code", status: "completed", startedAt: now, retryCount: 0 });

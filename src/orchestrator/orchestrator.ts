@@ -63,11 +63,17 @@ export class Orchestrator {
     this.prMonitor = new PRMonitor(config, github, this.logger);
   }
 
-  start(): void {
+  async start(): Promise<void> {
     this.logger.info({
       pollInterval: this.config.poll.interval,
       reconcileInterval: this.config.poll.reconcileInterval,
     }, "orchestrator started");
+
+    // Run startup reconciliation before the first poll
+    await this.reconcileStartup().catch((err) => {
+      this.logger.error({ err }, "startup reconciliation failed");
+    });
+
     this.pollTimer = setInterval(() => this.tick(), this.config.poll.interval);
     this.reconcileTimer = setInterval(() => this.reconcile(), this.config.poll.reconcileInterval);
 
@@ -498,6 +504,115 @@ export class Orchestrator {
         entry.abortController?.abort();
       }
     }
+  }
+
+  /**
+   * Reconcile internal DB/label state with GitHub on startup.
+   *
+   * 1. For each non-terminal run in the DB that has no active in-memory entry:
+   *    - If the issue is closed or has a merged PR → mark completed
+   *    - If a PR was closed without merging → mark failed
+   * 2. For each issue carrying the inProgress label on GitHub:
+   *    - If there is no active in-memory run, remove the stale label
+   * 3. Clean up inProgress labels from closed issues
+   *
+   * This method is idempotent and safe to call multiple times.
+   */
+  async reconcileStartup(): Promise<void> {
+    this.logger.info("startup reconciliation starting");
+    let corrected = 0;
+
+    // ── Step 1: Fix stale DB runs ──────────────────────────────────────
+    const staleRuns = this.deps.runsRepo?.listNonTerminal() ?? [];
+    this.logger.info({ staleRunCount: staleRuns.length }, "reconcile: checking non-terminal runs in DB");
+
+    for (const run of staleRuns) {
+      // Skip runs that are actively tracked in memory (currently executing)
+      if (this.state.isRunning(run.issueKey)) continue;
+
+      const parsed = this.github.parseIssueKey(run.issueKey);
+      if (!parsed) {
+        this.logger.warn({ issueKey: run.issueKey, runId: run.id }, "reconcile: cannot parse issue key, marking abandoned");
+        this.deps.runsRepo?.updateStatus(run.id, "failed", new Date().toISOString(), "abandoned: unparseable issue key");
+        corrected++;
+        continue;
+      }
+
+      try {
+        // Check if a merged PR already resolves this issue
+        const mergedPR = await this.github.findMergedPRForIssue(parsed.owner, parsed.repo, parsed.number);
+        if (mergedPR) {
+          this.logger.info({ issueKey: run.issueKey, runId: run.id, prNumber: mergedPR.number }, "reconcile: issue resolved by merged PR, marking completed");
+          this.deps.runsRepo?.updateStatus(run.id, "completed", new Date().toISOString());
+          await this.github.removeLabel(parsed.owner, parsed.repo, parsed.number, this.config.labels.inProgress).catch(() => {});
+          corrected++;
+          continue;
+        }
+
+        // Check if issue is closed on GitHub
+        const issueState = await this.github.fetchIssueState(parsed.owner, parsed.repo, parsed.number);
+        if (issueState.state === "closed") {
+          this.logger.info({ issueKey: run.issueKey, runId: run.id }, "reconcile: issue closed on GitHub, marking completed");
+          this.deps.runsRepo?.updateStatus(run.id, "completed", new Date().toISOString());
+          await this.github.removeLabel(parsed.owner, parsed.repo, parsed.number, this.config.labels.inProgress).catch(() => {});
+          corrected++;
+          continue;
+        }
+
+        // Issue is still open, no merged PR — check if there's a closed (unmerged) PR
+        // If status is "running" but no in-memory entry, the orchestrator was restarted
+        if (run.status === "running") {
+          this.logger.info({ issueKey: run.issueKey, runId: run.id }, "reconcile: orphaned running run (no in-memory entry), marking failed");
+          this.deps.runsRepo?.updateStatus(run.id, "failed", new Date().toISOString(), "abandoned: orchestrator restarted");
+          await this.github.removeLabel(parsed.owner, parsed.repo, parsed.number, this.config.labels.inProgress).catch(() => {});
+          corrected++;
+        }
+      } catch (err) {
+        this.logger.error({ err, issueKey: run.issueKey, runId: run.id }, "reconcile: error checking run state");
+      }
+    }
+
+    // ── Step 2 & 3: Clean up stale inProgress labels ───────────────────
+    for (const repoConfig of this.config.github.repos) {
+      try {
+        const labeled = await this.github.fetchIssuesWithLabel(
+          repoConfig.owner, repoConfig.repo, this.config.labels.inProgress,
+        );
+
+        for (const issue of labeled) {
+          const key = this.github.issueKey(repoConfig.owner, repoConfig.repo, issue.number);
+
+          // If there's an active in-memory run, keep the label
+          if (this.state.isRunning(key)) continue;
+
+          // Issue is closed → always remove stale label
+          if (issue.state === "closed") {
+            this.logger.info({ issueKey: key }, "reconcile: removing stale inProgress label from closed issue");
+            await this.github.removeLabel(repoConfig.owner, repoConfig.repo, issue.number, this.config.labels.inProgress);
+            corrected++;
+            continue;
+          }
+
+          // Issue is open — check if a merged PR resolves it
+          const mergedPR = await this.github.findMergedPRForIssue(repoConfig.owner, repoConfig.repo, issue.number);
+          if (mergedPR) {
+            this.logger.info({ issueKey: key, prNumber: mergedPR.number }, "reconcile: removing stale inProgress label (issue resolved by merged PR)");
+            await this.github.removeLabel(repoConfig.owner, repoConfig.repo, issue.number, this.config.labels.inProgress);
+            corrected++;
+            continue;
+          }
+
+          // Issue is open, no merged PR, no active run → stale label
+          this.logger.info({ issueKey: key }, "reconcile: removing stale inProgress label (no active run)");
+          await this.github.removeLabel(repoConfig.owner, repoConfig.repo, issue.number, this.config.labels.inProgress);
+          corrected++;
+        }
+      } catch (err) {
+        this.logger.error({ err, owner: repoConfig.owner, repo: repoConfig.repo }, "reconcile: error cleaning up labels");
+      }
+    }
+
+    this.logger.info({ corrected }, "startup reconciliation complete");
   }
 
   async rebaseConflictingPRs(owner: string, repo: string): Promise<void> {
