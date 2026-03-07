@@ -259,8 +259,8 @@ export class Orchestrator {
             const handoffChunk = chunk as unknown as { toAgent: string };
             entry.currentAgent = handoffChunk.toAgent;
           } else if (chunk.type === "text") {
-            const textChunk = chunk as unknown as { content?: string };
-            const content = textChunk.content ?? "";
+            const textChunk = chunk as unknown as { text?: string };
+            const content = textChunk.text ?? "";
             entry.lastActivityDescription = content.length > 80 ? content.slice(0, 80) : (content || "Thinking...");
           }
         }
@@ -404,8 +404,8 @@ export class Orchestrator {
             const handoffChunk = chunk as unknown as { toAgent: string };
             entry.currentAgent = handoffChunk.toAgent;
           } else if (chunk.type === "text") {
-            const textChunk = chunk as unknown as { content?: string };
-            const content = textChunk.content ?? "";
+            const textChunk = chunk as unknown as { text?: string };
+            const content = textChunk.text ?? "";
             entry.lastActivityDescription = content.length > 80 ? content.slice(0, 80) : (content || "Thinking...");
           }
         }

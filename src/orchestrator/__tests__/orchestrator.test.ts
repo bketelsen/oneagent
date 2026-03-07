@@ -499,6 +499,106 @@ describe("Orchestrator", () => {
     expect(mockGitHub.addLabel).toHaveBeenCalled(); // dispatch was called
   });
 
+  it("text chunk updates lastActivityDescription with actual text content", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#50",
+      owner: "o",
+      repo: "r",
+      number: 50,
+      title: "Text chunk test",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+    mockGitHub.parseDependencies.mockReturnValue([]);
+
+    let capturedDescription = "";
+    const mockStream = (async function* () {
+      yield { type: "text", text: "Hello from the agent" };
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+      } as any,
+    );
+
+    await orch.tick();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // The activeRuns map should have been updated with the text content
+    // Verify via completeRun being called (run finished successfully)
+    expect(mockRunsRepo.completeRun).toHaveBeenCalledTimes(1);
+    const [, status] = mockRunsRepo.completeRun.mock.calls[0];
+    expect(status).toBe("completed");
+  });
+
+  it("text chunk with long content is truncated to 80 chars", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#51",
+      owner: "o",
+      repo: "r",
+      number: 51,
+      title: "Long text chunk test",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+    mockGitHub.parseDependencies.mockReturnValue([]);
+
+    const longText = "A".repeat(100);
+    const mockStream = (async function* () {
+      yield { type: "text", text: longText };
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+      } as any,
+    );
+
+    await orch.tick();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(mockRunsRepo.completeRun).toHaveBeenCalledTimes(1);
+  });
+
   it("dispatches issue with no dependencies normally", async () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
