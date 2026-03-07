@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { SSEHub } from "../sse.js";
-import type { DurationStats, StatusCounts } from "../../db/runs.js";
+import type { DurationStats, StatusCounts, RunsRepo } from "../../db/runs.js";
 
 export interface DashboardRun {
   id: string;
@@ -25,6 +25,7 @@ export interface AppContext {
   getDurationStats?: () => DurationStats;
   getStatusCounts?: () => StatusCounts;
   getTotalTokens?: () => { tokensIn: number; tokensOut: number; runs: number };
+  runsRepo?: RunsRepo;
 }
 
 export function apiRoutes(ctx: AppContext): Hono {
@@ -37,6 +38,18 @@ export function apiRoutes(ctx: AppContext): Hono {
 
   api.get("/status", (c) => {
     return c.json(ctx.getState());
+  });
+
+  api.get("/runs/:id", (c) => {
+    if (!ctx.runsRepo) {
+      return c.json({ error: "Runs not available" }, 500);
+    }
+    const id = c.req.param("id");
+    const run = ctx.runsRepo.getById(id);
+    if (!run) {
+      return c.json({ error: "Run not found" }, 404);
+    }
+    return c.json(run);
   });
 
   api.get("/events", (c) => {
