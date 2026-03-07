@@ -10,6 +10,7 @@ import type { MetricsRepo } from "../db/metrics.js";
 import { RunState, type RunEntry } from "./state.js";
 import { RetryQueue } from "./retry.js";
 import { Dispatcher } from "./dispatcher.js";
+import { PRMonitor, type ReviewFeedbackResult } from "./pr-monitor.js";
 import { buildAgentGraph, type AgentDef } from "../agents/graph.js";
 import { coderAgent } from "../agents/coder.js";
 import { createStallDetector } from "../middleware/stall-detector.js";
@@ -32,10 +33,12 @@ export class Orchestrator {
   readonly state = new RunState();
   readonly retryQueue: RetryQueue;
   readonly sseHub = new EventEmitter();
+  readonly prMonitor: PRMonitor;
   private dispatcher = new Dispatcher();
   private agentMap: Record<string, AgentDef>;
   private pollTimer?: ReturnType<typeof setInterval>;
   private reconcileTimer?: ReturnType<typeof setInterval>;
+  private reviewTimer?: ReturnType<typeof setInterval>;
   private logger: Logger;
 
   constructor(
@@ -50,6 +53,7 @@ export class Orchestrator {
     const graph = buildAgentGraph();
     this.agentMap = Object.fromEntries(graph);
     this.logger = deps.logger.child({ module: "orchestrator" });
+    this.prMonitor = new PRMonitor(config, github, this.logger);
   }
 
   start(): void {
@@ -59,6 +63,13 @@ export class Orchestrator {
     }, "orchestrator started");
     this.pollTimer = setInterval(() => this.tick(), this.config.poll.interval);
     this.reconcileTimer = setInterval(() => this.reconcile(), this.config.poll.reconcileInterval);
+
+    if (this.config.prReview.enabled) {
+      const reviewInterval = this.config.prReview.pollInterval;
+      this.logger.info({ reviewPollInterval: reviewInterval }, "PR review feedback polling enabled");
+      this.reviewTimer = setInterval(() => this.tickReviewFeedback(), reviewInterval);
+    }
+
     this.tick();
   }
 
@@ -67,6 +78,8 @@ export class Orchestrator {
     this.logger.info({ activeCount }, "orchestrator stopping");
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+    if (this.reviewTimer) clearInterval(this.reviewTimer);
+    this.prMonitor.stop();
     for (const [, entry] of this.state.running()) {
       entry.abortController?.abort();
     }
@@ -108,6 +121,151 @@ export class Orchestrator {
       const issues = await this.github.fetchIssues(parsed.owner, parsed.repo, this.config.labels.eligible);
       const issue = issues.find((i) => i.key === key);
       if (issue) await this.dispatch(issue);
+    }
+  }
+
+  async tickReviewFeedback(): Promise<void> {
+    if (!this.config.prReview.enabled) return;
+
+    const results = await this.prMonitor.checkReviewFeedback();
+    this.logger.info({ reviewFeedbackCount: results.length }, "review feedback tick");
+
+    for (const result of results) {
+      const prRunKey = `pr-review:${result.prKey}`;
+      if (this.state.isRunning(prRunKey)) continue;
+      if (this.state.activeCount() >= this.config.concurrency.max) {
+        this.logger.debug({ max: this.config.concurrency.max }, "concurrency limit reached, skipping review dispatch");
+        break;
+      }
+
+      await this.dispatchReviewFeedback(result, prRunKey);
+    }
+  }
+
+  private async dispatchReviewFeedback(result: ReviewFeedbackResult, prRunKey: string): Promise<void> {
+    const runId = ulid();
+    const abortController = new AbortController();
+
+    const entry: RunEntry = {
+      runId,
+      issueKey: prRunKey,
+      provider: this.config.agent.provider,
+      startedAt: new Date(),
+      lastActivity: new Date(),
+      retryCount: 0,
+      abortController,
+    };
+
+    this.state.add(prRunKey, entry);
+    this.logger.info({ runId, prKey: result.prKey, commentCount: result.commentCount }, "dispatching PR review feedback agent");
+
+    this.deps.runsRepo?.insert({
+      id: runId,
+      issueKey: prRunKey,
+      provider: entry.provider,
+      status: "running",
+      startedAt: entry.startedAt.toISOString(),
+      retryCount: 0,
+    });
+
+    this.sseHub.emit("sse", {
+      type: "agent:started",
+      data: { runId, issueKey: prRunKey, provider: entry.provider },
+    });
+
+    // Mark these comments as processed immediately to avoid re-dispatch
+    this.prMonitor.markReviewProcessed(result.prKey, result.latestCommentId);
+
+    const workDir = this.deps.workspace?.ensure(prRunKey);
+
+    // Run agent in background
+    this.executeReviewRun(runId, prRunKey, result.prompt, abortController, workDir).catch((err) => {
+      this.logger.error({ err, runId, prKey: result.prKey }, "unhandled review run error");
+    });
+  }
+
+  private async executeReviewRun(
+    runId: string,
+    prRunKey: string,
+    prompt: string,
+    abortController: AbortController,
+    workDir?: string,
+  ): Promise<void> {
+    const stallDetector = createStallDetector(this.config.agent.stallTimeout, () => {
+      this.logger.warn({ runId, prRunKey }, "review agent stalled, aborting");
+      abortController.abort();
+    });
+
+    try {
+      const runConfig: RunConfig = {
+        provider: this.config.agent.provider as any,
+        agent: coderAgent as any,
+        agents: this.agentMap as any,
+        workDir,
+        signal: abortController.signal,
+      };
+
+      const agentRun = await run(prompt, runConfig);
+      stallDetector.start();
+
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+
+      for await (const chunk of agentRun.stream) {
+        stallDetector.activity();
+        this.state.updateActivity(prRunKey);
+
+        this.sseHub.emit("sse", {
+          type: `agent:${chunk.type}`,
+          data: { runId, ...chunk },
+        });
+
+        this.deps.eventsRepo?.insert(runId, chunk.type, chunk as unknown as Record<string, unknown>);
+
+        if (chunk.type === "handoff") {
+          const { fromAgent, toAgent } = chunk as unknown as { fromAgent: string; toAgent: string };
+          logHandoff(fromAgent, toAgent, runId, 0, this.logger);
+        }
+
+        if (chunk.type === "done" && chunk.usage) {
+          totalInputTokens += chunk.usage.inputTokens;
+          totalOutputTokens += chunk.usage.outputTokens;
+        }
+      }
+
+      stallDetector.stop();
+
+      const durationMs = Date.now() - (this.state.get(prRunKey)?.startedAt.getTime() ?? Date.now());
+      this.state.remove(prRunKey);
+      this.deps.runsRepo?.updateStatus(runId, "completed", new Date().toISOString());
+      this.logger.info({ runId, prRunKey, durationMs, tokensIn: totalInputTokens, tokensOut: totalOutputTokens }, "review feedback agent run completed");
+
+      if (totalInputTokens > 0 || totalOutputTokens > 0) {
+        this.deps.metricsRepo?.record({
+          runId,
+          provider: this.config.agent.provider,
+          tokensIn: totalInputTokens,
+          tokensOut: totalOutputTokens,
+          durationMs,
+        });
+      }
+
+      this.sseHub.emit("sse", {
+        type: "agent:completed",
+        data: { runId, issueKey: prRunKey },
+      });
+    } catch (err) {
+      stallDetector.stop();
+      this.state.remove(prRunKey);
+
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.deps.runsRepo?.updateStatus(runId, "failed", new Date().toISOString(), errorMsg);
+      this.logger.error({ err, runId, prRunKey }, "review feedback agent run failed");
+
+      this.sseHub.emit("sse", {
+        type: "agent:failed",
+        data: { runId, issueKey: prRunKey, error: errorMsg },
+      });
     }
   }
 

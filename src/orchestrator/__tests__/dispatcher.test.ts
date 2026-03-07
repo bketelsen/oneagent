@@ -67,4 +67,72 @@ describe("Dispatcher", () => {
     expect(prompt).toContain("feature-branch");
     expect(prompt).toContain("test failed on line 42");
   });
+
+  it("builds a PR review feedback prompt", () => {
+    const dispatcher = new Dispatcher();
+    const prompt = dispatcher.buildPRReviewPrompt(
+      {
+        key: "o/r#10",
+        owner: "o",
+        repo: "r",
+        number: 10,
+        title: "Add feature",
+        headRef: "feature-branch",
+        state: "open",
+        labels: ["oneagent"],
+      },
+      [
+        { id: 1, body: "Please fix the naming", path: "src/index.ts", user: "reviewer", createdAt: "2026-01-01", pullRequestReviewId: 1 },
+        { id: 2, body: "Add a test for this", path: "src/utils.ts", user: "reviewer2", createdAt: "2026-01-01", pullRequestReviewId: 2 },
+      ],
+      "+added line\n-removed line",
+    );
+    expect(prompt).toContain("PR Review Feedback: o/r#10");
+    expect(prompt).toContain("feature-branch");
+    expect(prompt).toContain("Please fix the naming");
+    expect(prompt).toContain("Add a test for this");
+    expect(prompt).toContain("src/index.ts");
+    expect(prompt).toContain("src/utils.ts");
+    expect(prompt).toContain("+added line");
+    expect(prompt).toContain("Do NOT create a new PR");
+  });
+
+  it("includes workspace in PR review prompt when provided", () => {
+    const dispatcher = new Dispatcher();
+    const prompt = dispatcher.buildPRReviewPrompt(
+      {
+        key: "o/r#10",
+        owner: "o",
+        repo: "r",
+        number: 10,
+        title: "Add feature",
+        headRef: "feature-branch",
+        state: "open",
+        labels: ["oneagent"],
+      },
+      [{ id: 1, body: "Fix it", path: "a.ts", user: "bob", createdAt: "2026-01-01", pullRequestReviewId: 1 }],
+      "diff",
+      "/tmp/workspace",
+    );
+    expect(prompt).toContain("**Workspace:** /tmp/workspace");
+  });
+
+  it("omits workspace in PR review prompt when not provided", () => {
+    const dispatcher = new Dispatcher();
+    const prompt = dispatcher.buildPRReviewPrompt(
+      {
+        key: "o/r#10",
+        owner: "o",
+        repo: "r",
+        number: 10,
+        title: "Add feature",
+        headRef: "feature-branch",
+        state: "open",
+        labels: ["oneagent"],
+      },
+      [{ id: 1, body: "Fix it", path: "a.ts", user: "bob", createdAt: "2026-01-01", pullRequestReviewId: 1 }],
+      "diff",
+    );
+    expect(prompt).not.toContain("Workspace:");
+  });
 });

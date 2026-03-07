@@ -16,6 +16,11 @@ function makeMockGitHub() {
     fetchIssues: vi.fn().mockResolvedValue([]),
     addLabel: vi.fn().mockResolvedValue(undefined),
     removeLabel: vi.fn().mockResolvedValue(undefined),
+    fetchPRsWithLabel: vi.fn().mockResolvedValue([]),
+    fetchPRReviewComments: vi.fn().mockResolvedValue([]),
+    fetchPRsWithReviewFeedback: vi.fn().mockResolvedValue([]),
+    fetchPRDiff: vi.fn().mockResolvedValue(""),
+    fetchCheckRuns: vi.fn().mockResolvedValue([]),
     issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
     parseIssueKey: (key: string) => {
       const match = key.match(/^(.+)\/(.+)#(\d+)$/);
@@ -44,6 +49,7 @@ const mockConfig = {
   workspace: { baseDir: "/tmp/test-ws", hooks: {} },
   web: { port: 3000, enabled: false },
   project: { statuses: { todo: "Todo", inProgress: "In Progress", inReview: "In Review", done: "Done" } },
+  prReview: { enabled: true, pollInterval: 60000 },
 };
 
 describe("Orchestrator", () => {
@@ -170,5 +176,47 @@ describe("Orchestrator", () => {
     expect(typeof durationMs).toBe("number");
     expect(durationMs).toBeGreaterThanOrEqual(0);
     expect(error).toBe("agent crashed");
+  });
+
+  it("has a prMonitor instance", () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    expect(orch.prMonitor).toBeDefined();
+  });
+
+  it("tickReviewFeedback does nothing when prReview is disabled", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const disabledConfig = { ...mockConfig, prReview: { enabled: false, pollInterval: 60000 } };
+    const orch = new Orchestrator(disabledConfig as any, mockGitHub as any, { config: disabledConfig, github: mockGitHub, logger: mockLogger } as any);
+    await orch.tickReviewFeedback();
+    expect(mockGitHub.fetchPRsWithReviewFeedback).not.toHaveBeenCalled();
+  });
+
+  it("tickReviewFeedback polls for review feedback when enabled", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    mockGitHub.fetchPRsWithReviewFeedback.mockResolvedValue([]);
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    await orch.tickReviewFeedback();
+    expect(mockGitHub.fetchPRsWithReviewFeedback).toHaveBeenCalled();
+  });
+
+  it("start sets up review timer when prReview is enabled", () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+    orch.start();
+    orch.stop();
+  });
+
+  it("start does not set up review timer when prReview is disabled", () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const disabledConfig = { ...mockConfig, prReview: { enabled: false, pollInterval: 60000 } };
+    const orch = new Orchestrator(disabledConfig as any, mockGitHub as any, { config: disabledConfig, github: mockGitHub, logger: mockLogger } as any);
+    orch.start();
+    orch.stop();
   });
 });

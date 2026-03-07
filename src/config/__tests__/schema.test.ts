@@ -94,4 +94,42 @@ describe("configSchema", () => {
       expect(result.success).toBe(false);
     });
   });
+
+  describe("prReview config", () => {
+    const baseConfig = {
+      github: {
+        repos: [{ owner: "test", repo: "repo", labels: ["oneagent"] }],
+      },
+    };
+
+    it("defaults prReview.enabled to true", () => {
+      const result = configSchema.parse(baseConfig);
+      expect(result.prReview.enabled).toBe(true);
+    });
+
+    it("defaults prReview.pollInterval to 60000", () => {
+      const result = configSchema.parse(baseConfig);
+      expect(result.prReview.pollInterval).toBe(60000);
+    });
+
+    it("accepts explicit prReview config", () => {
+      const result = configSchema.safeParse({
+        ...baseConfig,
+        prReview: { enabled: false, pollInterval: 120000 },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.prReview.enabled).toBe(false);
+        expect(result.data.prReview.pollInterval).toBe(120000);
+      }
+    });
+
+    it("rejects prReview.pollInterval below 5000", () => {
+      const result = configSchema.safeParse({
+        ...baseConfig,
+        prReview: { pollInterval: 1000 },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
 });

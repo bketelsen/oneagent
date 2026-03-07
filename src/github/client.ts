@@ -1,6 +1,6 @@
 import { Octokit } from "octokit";
 import pino, { type Logger } from "pino";
-import type { Issue, PullRequest, CheckRun } from "./types.js";
+import type { Issue, PullRequest, CheckRun, ReviewComment, PRWithReviewFeedback } from "./types.js";
 
 export class GitHubClient {
   private octokit: Octokit;
@@ -111,6 +111,59 @@ export class GitHubClient {
       numbers.add(parseInt(match[1], 10));
     }
     return numbers;
+  }
+
+  async fetchPRReviewComments(owner: string, repo: string, prNumber: number): Promise<ReviewComment[]> {
+    const { data } = await this.octokit.rest.pulls.listReviewComments({
+      owner, repo, pull_number: prNumber, per_page: 100, sort: "created", direction: "desc",
+    });
+    this.logger.debug({ owner, repo, prNumber, count: data.length }, "fetched PR review comments");
+    return data.map((c) => ({
+      id: c.id,
+      body: c.body,
+      path: c.path,
+      user: c.user?.login ?? "unknown",
+      createdAt: c.created_at,
+      pullRequestReviewId: c.pull_request_review_id,
+    }));
+  }
+
+  async fetchPRsWithReviewFeedback(
+    owner: string,
+    repo: string,
+    label: string,
+    lastProcessedCommentIds: Map<string, number>,
+  ): Promise<PRWithReviewFeedback[]> {
+    const prs = await this.fetchPRsWithLabel(owner, repo, label);
+    const results: PRWithReviewFeedback[] = [];
+
+    for (const pr of prs) {
+      const comments = await this.fetchPRReviewComments(owner, repo, pr.number);
+      if (comments.length === 0) continue;
+
+      const latestCommentId = Math.max(...comments.map((c) => c.id));
+      const lastProcessed = lastProcessedCommentIds.get(pr.key) ?? 0;
+
+      if (latestCommentId > lastProcessed) {
+        // Only include comments newer than the last processed one
+        const newComments = comments.filter((c) => c.id > lastProcessed);
+        if (newComments.length > 0) {
+          results.push({ pr, comments: newComments, latestCommentId });
+        }
+      }
+    }
+
+    this.logger.debug({ owner, repo, label, prsWithFeedback: results.length }, "fetched PRs with review feedback");
+    return results;
+  }
+
+  async fetchPRDiff(owner: string, repo: string, prNumber: number): Promise<string> {
+    const { data } = await this.octokit.rest.pulls.get({
+      owner, repo, pull_number: prNumber,
+      mediaType: { format: "diff" },
+    });
+    this.logger.debug({ owner, repo, prNumber }, "fetched PR diff");
+    return data as unknown as string;
   }
 
   async fetchCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {

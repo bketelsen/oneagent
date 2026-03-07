@@ -195,3 +195,162 @@ describe("fetchIssues OR logic with multiple labels", () => {
     expect(issues[0].number).toBe(10);
   });
 });
+
+describe("fetchPRReviewComments", () => {
+  function createMockClientForReviews(reviewComments: any[]) {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          list: vi.fn().mockResolvedValue({ data: [] }),
+          listReviewComments: vi.fn().mockResolvedValue({ data: reviewComments }),
+          get: vi.fn().mockResolvedValue({ data: "diff content" }),
+        },
+      },
+    };
+    return client;
+  }
+
+  it("returns mapped review comments", async () => {
+    const client = createMockClientForReviews([
+      {
+        id: 100,
+        body: "Fix this typo",
+        path: "src/index.ts",
+        user: { login: "reviewer" },
+        created_at: "2026-01-01T00:00:00Z",
+        pull_request_review_id: 42,
+      },
+      {
+        id: 101,
+        body: "Add error handling",
+        path: "src/utils.ts",
+        user: { login: "reviewer2" },
+        created_at: "2026-01-02T00:00:00Z",
+        pull_request_review_id: 43,
+      },
+    ]);
+
+    const comments = await client.fetchPRReviewComments("owner", "repo", 10);
+    expect(comments).toHaveLength(2);
+    expect(comments[0]).toEqual({
+      id: 100,
+      body: "Fix this typo",
+      path: "src/index.ts",
+      user: "reviewer",
+      createdAt: "2026-01-01T00:00:00Z",
+      pullRequestReviewId: 42,
+    });
+    expect(comments[1].user).toBe("reviewer2");
+  });
+
+  it("handles comments with null user", async () => {
+    const client = createMockClientForReviews([
+      {
+        id: 200,
+        body: "Comment",
+        path: "file.ts",
+        user: null,
+        created_at: "2026-01-01T00:00:00Z",
+        pull_request_review_id: null,
+      },
+    ]);
+
+    const comments = await client.fetchPRReviewComments("owner", "repo", 5);
+    expect(comments).toHaveLength(1);
+    expect(comments[0].user).toBe("unknown");
+  });
+
+  it("returns empty array when no review comments", async () => {
+    const client = createMockClientForReviews([]);
+    const comments = await client.fetchPRReviewComments("owner", "repo", 5);
+    expect(comments).toHaveLength(0);
+  });
+});
+
+describe("fetchPRsWithReviewFeedback", () => {
+  function createMockClientForFeedback(prs: any[], reviewCommentsByPR: Record<number, any[]>) {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          list: vi.fn().mockResolvedValue({ data: prs }),
+          listReviewComments: vi.fn().mockImplementation(({ pull_number }: { pull_number: number }) => {
+            return Promise.resolve({ data: reviewCommentsByPR[pull_number] ?? [] });
+          }),
+        },
+      },
+    };
+    return client;
+  }
+
+  it("returns PRs with new review comments", async () => {
+    const client = createMockClientForFeedback(
+      [
+        { number: 10, title: "PR 10", state: "open", labels: [{ name: "oneagent-working" }], head: { ref: "branch-10" } },
+      ],
+      {
+        10: [
+          { id: 100, body: "Fix this", path: "a.ts", user: { login: "alice" }, created_at: "2026-01-01", pull_request_review_id: 1 },
+          { id: 101, body: "And this", path: "b.ts", user: { login: "bob" }, created_at: "2026-01-02", pull_request_review_id: 2 },
+        ],
+      },
+    );
+
+    const results = await client.fetchPRsWithReviewFeedback("owner", "repo", "oneagent-working", new Map());
+    expect(results).toHaveLength(1);
+    expect(results[0].pr.number).toBe(10);
+    expect(results[0].comments).toHaveLength(2);
+    expect(results[0].latestCommentId).toBe(101);
+  });
+
+  it("skips PRs whose comments have already been processed", async () => {
+    const client = createMockClientForFeedback(
+      [
+        { number: 10, title: "PR 10", state: "open", labels: [{ name: "oneagent-working" }], head: { ref: "branch-10" } },
+      ],
+      {
+        10: [
+          { id: 100, body: "Fix this", path: "a.ts", user: { login: "alice" }, created_at: "2026-01-01", pull_request_review_id: 1 },
+        ],
+      },
+    );
+
+    const lastProcessed = new Map([["owner/repo#10", 100]]);
+    const results = await client.fetchPRsWithReviewFeedback("owner", "repo", "oneagent-working", lastProcessed);
+    expect(results).toHaveLength(0);
+  });
+
+  it("returns only new comments when some have been processed", async () => {
+    const client = createMockClientForFeedback(
+      [
+        { number: 10, title: "PR 10", state: "open", labels: [{ name: "oneagent-working" }], head: { ref: "branch-10" } },
+      ],
+      {
+        10: [
+          { id: 100, body: "Old comment", path: "a.ts", user: { login: "alice" }, created_at: "2026-01-01", pull_request_review_id: 1 },
+          { id: 200, body: "New comment", path: "b.ts", user: { login: "bob" }, created_at: "2026-01-02", pull_request_review_id: 2 },
+        ],
+      },
+    );
+
+    const lastProcessed = new Map([["owner/repo#10", 100]]);
+    const results = await client.fetchPRsWithReviewFeedback("owner", "repo", "oneagent-working", lastProcessed);
+    expect(results).toHaveLength(1);
+    expect(results[0].comments).toHaveLength(1);
+    expect(results[0].comments[0].id).toBe(200);
+    expect(results[0].latestCommentId).toBe(200);
+  });
+
+  it("skips PRs with no review comments", async () => {
+    const client = createMockClientForFeedback(
+      [
+        { number: 10, title: "PR 10", state: "open", labels: [{ name: "oneagent-working" }], head: { ref: "branch-10" } },
+      ],
+      { 10: [] },
+    );
+
+    const results = await client.fetchPRsWithReviewFeedback("owner", "repo", "oneagent-working", new Map());
+    expect(results).toHaveLength(0);
+  });
+});
