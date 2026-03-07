@@ -100,6 +100,12 @@ program
             lastError: r.error ?? eventsRepo.getLastError(r.id),
           })),
         runsRepo,
+        cancelRun: (runId: string) => {
+          const entry = orchestrator.state.get(runId);
+          if (!entry?.abortController) return false;
+          entry.abortController.abort();
+          return true;
+        },
       };
 
       const app = createApp({
