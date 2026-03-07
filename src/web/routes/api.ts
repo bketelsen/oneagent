@@ -17,7 +17,15 @@ export interface AppContext {
   sseHub: SSEHub;
   onRefresh: () => Promise<void>;
   getState: () => {
-    running: Array<{ runId: string; issueKey: string; provider: string }>;
+    running: Array<{
+      runId: string;
+      issueKey: string;
+      provider: string;
+      currentAgent?: string;
+      lastActivityDescription?: string;
+      toolCallCount?: number;
+      startedAt?: string;
+    }>;
     retryQueue: string[];
     metrics: { tokensIn: number; tokensOut: number; runs: number };
   };

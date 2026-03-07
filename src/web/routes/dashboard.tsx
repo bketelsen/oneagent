@@ -27,18 +27,49 @@ export function dashboardRoute(ctx: AppContext): Hono {
         <h2 class="text-xl font-semibold mb-4">Running Agents</h2>
         {state.running.length === 0
           ? <p class="text-gray-500">No agents running</p>
-          : <div class="space-y-2">
+          : <div class="space-y-3">
               {state.running.map((r) => (
-                <a href={`/runs/${r.runId}`} class="block bg-gray-800 rounded-lg p-4 flex justify-between items-center hover:bg-gray-700">
-                  <div>
-                    <span class="text-blue-400">{r.issueKey}</span>
-                    <span class="ml-2 text-gray-500 text-sm">{r.provider}</span>
+                <a href={`/runs/${r.runId}/live`} class="block bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition-colors">
+                  <div class="flex justify-between items-start mb-2">
+                    <div class="flex items-center gap-2">
+                      <span class="text-blue-400 font-medium">{r.issueKey}</span>
+                      <span class="bg-purple-600 text-white text-xs px-2 py-0.5 rounded-full">{r.currentAgent ?? "coder"}</span>
+                    </div>
+                    <span class="text-green-400 text-sm flex items-center gap-1">
+                      <span class="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                      running
+                    </span>
                   </div>
-                  <span class="text-green-400 text-sm">running</span>
+                  <div class="flex justify-between items-center text-sm">
+                    <span class="text-gray-400 truncate max-w-md">{(r.lastActivityDescription ?? "Starting...").slice(0, 80)}</span>
+                    <div class="flex items-center gap-4 text-gray-500 shrink-0">
+                      <span>{r.toolCallCount ?? 0} tool calls</span>
+                      {r.startedAt && (
+                        <span class="elapsed-timer" data-started={r.startedAt}>—</span>
+                      )}
+                    </div>
+                  </div>
                 </a>
               ))}
             </div>
         }
+
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            function updateTimers() {
+              document.querySelectorAll('.elapsed-timer').forEach(function(el) {
+                var started = new Date(el.getAttribute('data-started')).getTime();
+                var elapsed = Math.floor((Date.now() - started) / 1000);
+                var h = Math.floor(elapsed / 3600);
+                var m = Math.floor((elapsed % 3600) / 60);
+                var s = elapsed % 60;
+                el.textContent = (h > 0 ? h + 'h ' : '') + m + 'm ' + s + 's';
+              });
+            }
+            updateTimers();
+            setInterval(updateTimers, 1000);
+          })();
+        `}} />
 
         <h2 class="text-xl font-semibold mb-4 mt-8">Recent Runs</h2>
         {(() => {
@@ -62,7 +93,9 @@ export function dashboardRoute(ctx: AppContext): Hono {
                 <tbody>
                   {runs.map((run) => (
                     <tr class="border-b border-gray-800">
-                      <td class="px-4 py-2 text-blue-400">{run.issueKey}</td>
+                      <td class="px-4 py-2 text-blue-400">
+                        <a href={run.status === "running" ? `/runs/${run.id}/live` : `/runs/${run.id}`} class="hover:underline">{run.issueKey}</a>
+                      </td>
                       <td class="px-4 py-2">{run.provider}</td>
                       <td class="px-4 py-2">{run.status}</td>
                       <td class="px-4 py-2 text-gray-400">{run.startedAt}</td>

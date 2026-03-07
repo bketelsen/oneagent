@@ -7,6 +7,7 @@ import { issuesRoute, type IssuesContext } from "./routes/issues.js";
 import { settingsRoute } from "./routes/settings.js";
 import { planningRoute, type PlanningContext } from "./routes/planning.js";
 import { runsRoute, type RunsContext } from "./routes/runs.js";
+import { liveRoute, type LiveContext } from "./routes/live.js";
 import { requestLogger } from "../middleware/request-logger.js";
 import { healthRoute } from "./routes/health.js";
 import type { Config } from "../config/schema.js";
@@ -49,6 +50,7 @@ export function createApp(ctx: AppContext | FullAppContext): Hono {
   }
 
   if (isFullCtx && ctx.runs) {
+    app.route("/runs", liveRoute(ctx.runs));
     app.route("/runs", runsRoute(ctx.runs));
   }
 
