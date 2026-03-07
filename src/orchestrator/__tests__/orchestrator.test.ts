@@ -16,6 +16,8 @@ function makeMockGitHub() {
     fetchIssues: vi.fn().mockResolvedValue([]),
     addLabel: vi.fn().mockResolvedValue(undefined),
     removeLabel: vi.fn().mockResolvedValue(undefined),
+    addComment: vi.fn().mockResolvedValue(undefined),
+    findMergedPRForIssue: vi.fn().mockResolvedValue(null),
     fetchPRsWithLabel: vi.fn().mockResolvedValue([]),
     fetchPRReviewComments: vi.fn().mockResolvedValue([]),
     fetchPRsWithReviewFeedback: vi.fn().mockResolvedValue([]),
@@ -218,5 +220,125 @@ describe("Orchestrator", () => {
     const orch = new Orchestrator(disabledConfig as any, mockGitHub as any, { config: disabledConfig, github: mockGitHub, logger: mockLogger } as any);
     orch.start();
     orch.stop();
+  });
+
+  it("skips issue resolved by merged PR and posts comment", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const issue = {
+      key: "o/r#10",
+      owner: "o",
+      repo: "r",
+      number: 10,
+      title: "Already resolved",
+      body: "resolved issue",
+      labels: ["oneagent"],
+      state: "open",
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.findMergedPRForIssue.mockResolvedValue({ number: 42 });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      { config: mockConfig, github: mockGitHub, logger: mockLogger } as any,
+    );
+
+    await orch.tick();
+
+    // Should not dispatch (no addLabel for in-progress)
+    expect(mockGitHub.addLabel).not.toHaveBeenCalled();
+
+    // Should post a comment suggesting closure
+    expect(mockGitHub.addComment).toHaveBeenCalledWith(
+      "o", "r", 10,
+      "This issue appears to have been resolved by PR #42 (merged). Skipping. Consider closing this issue.",
+    );
+
+    // Should log the skip at info level
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ issueKey: "o/r#10", prNumber: 42 }),
+      "skipping issue already resolved by merged PR",
+    );
+  });
+
+  it("dispatches issue without merged PR normally", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const issue = {
+      key: "o/r#11",
+      owner: "o",
+      repo: "r",
+      number: 11,
+      title: "New issue",
+      body: "needs work",
+      labels: ["oneagent"],
+      state: "open",
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.findMergedPRForIssue.mockResolvedValue(null);
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 10, outputTokens: 5 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      { config: mockConfig, github: mockGitHub, logger: mockLogger } as any,
+    );
+
+    await orch.tick();
+
+    // Should dispatch — addLabel is called for in-progress
+    expect(mockGitHub.addLabel).toHaveBeenCalledWith("o", "r", 11, "oneagent-working");
+
+    // Should not post a closure comment
+    expect(mockGitHub.addComment).not.toHaveBeenCalled();
+  });
+
+  it("posts comment on skipped issue suggesting closure", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const issue = {
+      key: "o/r#20",
+      owner: "o",
+      repo: "r",
+      number: 20,
+      title: "Resolved by PR",
+      body: "already done",
+      labels: ["oneagent"],
+      state: "open",
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+    mockGitHub.findMergedPRForIssue.mockResolvedValue({ number: 99 });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      { config: mockConfig, github: mockGitHub, logger: mockLogger } as any,
+    );
+
+    await orch.tick();
+
+    expect(mockGitHub.addComment).toHaveBeenCalledTimes(1);
+    expect(mockGitHub.addComment).toHaveBeenCalledWith(
+      "o", "r", 20,
+      expect.stringContaining("PR #99"),
+    );
+    expect(mockGitHub.addComment).toHaveBeenCalledWith(
+      "o", "r", 20,
+      expect.stringContaining("Consider closing this issue"),
+    );
   });
 });

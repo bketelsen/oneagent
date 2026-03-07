@@ -106,6 +106,17 @@ export class Orchestrator {
         continue;
       }
 
+      // Check if a merged PR already resolves this issue
+      const mergedPR = await this.github.findMergedPRForIssue(issue.owner, issue.repo, issue.number);
+      if (mergedPR) {
+        this.logger.info({ issueKey: issue.key, prNumber: mergedPR.number }, "skipping issue already resolved by merged PR");
+        await this.github.addComment(
+          issue.owner, issue.repo, issue.number,
+          `This issue appears to have been resolved by PR #${mergedPR.number} (merged). Skipping. Consider closing this issue.`,
+        );
+        continue;
+      }
+
       await this.dispatch(issue);
     }
 
