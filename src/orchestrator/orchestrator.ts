@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import { execFile as execFileCb } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdirSync, rmSync } from "node:fs";
 import { run } from "one-agent-sdk";
 import type { StreamChunk, RunConfig } from "one-agent-sdk";
 import type { Config } from "../config/schema.js";
@@ -18,6 +21,8 @@ import { logHandoff } from "../middleware/logging.js";
 import { WorkspaceManager } from "../workspace/manager.js";
 import { ulid } from "ulid";
 import type { Logger } from "pino";
+
+const execFile = promisify(execFileCb);
 
 export interface OrchestratorDeps {
   config: Config;
@@ -410,6 +415,11 @@ export class Orchestrator {
         data: { runId, issueKey: issue.key },
       });
 
+      // After successful run, rebase any conflicting PRs
+      await this.rebaseConflictingPRs(issue.owner, issue.repo).catch((err) => {
+        this.logger.error({ err, owner: issue.owner, repo: issue.repo }, "rebase conflicting PRs failed");
+      });
+
     } catch (err) {
       stallDetector.stop();
 
@@ -447,6 +457,60 @@ export class Orchestrator {
       if (staleDuration > this.config.agent.stallTimeout * 2) {
         this.logger.warn({ issueKey: key, staleDuration }, "reconcile: aborting stale run");
         entry.abortController?.abort();
+      }
+    }
+  }
+
+  async rebaseConflictingPRs(owner: string, repo: string): Promise<void> {
+    const token = this.config.github.token ?? process.env.GITHUB_TOKEN;
+    if (!token) {
+      this.logger.warn("no GitHub token available, skipping rebase of conflicting PRs");
+      return;
+    }
+
+    const prs = await this.github.fetchOpenPRs(owner, repo);
+    this.logger.info({ owner, repo, prCount: prs.length }, "checking open PRs for merge conflicts");
+
+    for (const pr of prs) {
+      const { mergeable } = await this.github.fetchPRMergeableStatus(owner, repo, pr.number);
+
+      // mergeable === false means there are conflicts
+      if (mergeable !== false) continue;
+
+      this.logger.info({ owner, repo, prNumber: pr.number, branch: pr.headRef }, "rebasing conflicting PR");
+
+      const tmpDir = `/tmp/rebase-${owner}-${repo}-${pr.number}-${Date.now()}`;
+      try {
+        mkdirSync(tmpDir, { recursive: true });
+        const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+
+        await execFile("git", ["clone", "--branch", pr.headRef, "--single-branch", cloneUrl, tmpDir]);
+        await execFile("git", ["fetch", "origin", "main"], { cwd: tmpDir });
+
+        try {
+          await execFile("git", ["rebase", "origin/main"], { cwd: tmpDir });
+        } catch {
+          // Rebase failed — abort and comment
+          this.logger.warn({ owner, repo, prNumber: pr.number }, "rebase failed, aborting");
+          await execFile("git", ["rebase", "--abort"], { cwd: tmpDir }).catch(() => {});
+          await this.github.addComment(
+            owner,
+            repo,
+            pr.number,
+            `Automatic rebase onto \`main\` failed due to conflicts. Please rebase manually.`,
+          );
+          continue;
+        }
+
+        await execFile("git", ["push", "--force-with-lease"], { cwd: tmpDir });
+        this.logger.info({ owner, repo, prNumber: pr.number }, "successfully rebased and pushed PR");
+      } finally {
+        // Clean up workspace
+        try {
+          rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          this.logger.warn({ tmpDir }, "failed to clean up rebase workspace");
+        }
       }
     }
   }

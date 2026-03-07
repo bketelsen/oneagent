@@ -23,6 +23,8 @@ function makeMockGitHub() {
     fetchPRsWithReviewFeedback: vi.fn().mockResolvedValue([]),
     fetchPRDiff: vi.fn().mockResolvedValue(""),
     fetchCheckRuns: vi.fn().mockResolvedValue([]),
+    fetchOpenPRs: vi.fn().mockResolvedValue([]),
+    fetchPRMergeableStatus: vi.fn().mockResolvedValue({ mergeable: true, mergeableState: "clean" }),
     parseDependencies: vi.fn().mockReturnValue([]),
     isIssueClosed: vi.fn().mockResolvedValue(true),
     issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
