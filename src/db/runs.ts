@@ -101,6 +101,10 @@ export class RunsRepo {
   /**
    * Return all runs in non-terminal status (running / completed) that may
    * need reconciliation against the actual GitHub state.
+   *
+   * "completed" is included because a run may be marked completed in the DB
+   * before the orchestrator has verified the issue/PR state on GitHub (e.g.
+   * the process restarted mid-cleanup), so it still needs reconciliation.
    */
   listNonTerminal(): RunRow[] {
     return (

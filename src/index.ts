@@ -143,7 +143,7 @@ program
       });
     }
 
-    orchestrator.start();
+    await orchestrator.start();
     logger.info("Orchestrator started");
 
     const shutdown = () => {

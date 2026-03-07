@@ -285,6 +285,7 @@ export class GitHubClient {
     number: number,
   ): Promise<{ state: string; stateReason: string | null }> {
     const { data } = await this.octokit.rest.issues.get({ owner, repo, issue_number: number });
+    // Octokit types don't include state_reason yet — cast to any to access it
     return { state: data.state, stateReason: (data as any).state_reason ?? null };
   }
 

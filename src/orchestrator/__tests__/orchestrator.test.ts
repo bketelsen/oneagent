@@ -230,11 +230,11 @@ describe("Orchestrator", () => {
     expect(mockGitHub.fetchPRsWithReviewFeedback).toHaveBeenCalled();
   });
 
-  it("start sets up review timer when prReview is enabled", () => {
+  it("start sets up review timer when prReview is enabled", async () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
     const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
-    orch.start();
+    await orch.start();
     orch.stop();
   });
 
@@ -379,12 +379,12 @@ describe("Orchestrator", () => {
     expect(mockGitHub.removeLabel).toHaveBeenCalledWith("o", "r", 11, "oneagent-working");
   });
 
-  it("start does not set up review timer when prReview is disabled", () => {
+  it("start does not set up review timer when prReview is disabled", async () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
     const disabledConfig = { ...mockConfig, prReview: { enabled: false, pollInterval: 60000 } };
     const orch = new Orchestrator(disabledConfig as any, mockGitHub as any, { config: disabledConfig, github: mockGitHub, logger: mockLogger, sseHub: makeMockSSEHub() } as any);
-    orch.start();
+    await orch.start();
     orch.stop();
   });
 
