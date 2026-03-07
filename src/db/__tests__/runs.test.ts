@@ -107,6 +107,29 @@ describe("RunsRepo", () => {
     expect(stats.maxDurationMs).toBe(0);
   });
 
+  it("getStatusCounts returns correct counts", () => {
+    const now = new Date().toISOString();
+    repo.insert({ id: "c1", issueKey: "o/r#1", provider: "claude-code", status: "running", startedAt: now, retryCount: 0 });
+    repo.insert({ id: "c2", issueKey: "o/r#2", provider: "claude-code", status: "running", startedAt: now, retryCount: 0 });
+    repo.insert({ id: "c3", issueKey: "o/r#3", provider: "claude-code", status: "running", startedAt: now, retryCount: 0 });
+    repo.updateStatus("c1", "completed", now);
+    repo.updateStatus("c2", "failed", now, "some error");
+
+    const counts = repo.getStatusCounts();
+    expect(counts.total).toBe(3);
+    expect(counts.completed).toBe(1);
+    expect(counts.failed).toBe(1);
+    expect(counts.running).toBe(1);
+  });
+
+  it("getStatusCounts returns zeros when empty", () => {
+    const counts = repo.getStatusCounts();
+    expect(counts.total).toBe(0);
+    expect(counts.completed).toBe(0);
+    expect(counts.failed).toBe(0);
+    expect(counts.running).toBe(0);
+  });
+
   it("lists runs by issue key", () => {
     const now = new Date().toISOString();
     repo.insert({ id: "r1", issueKey: "o/r#1", provider: "claude-code", status: "completed", startedAt: now, retryCount: 0 });
