@@ -418,3 +418,90 @@ describe("fetchPRsWithReviewFeedback", () => {
     expect(results).toHaveLength(0);
   });
 });
+
+describe("fetchOpenPRs", () => {
+  function createMockClientForOpenPRs(prs: any[]) {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          list: vi.fn().mockResolvedValue({ data: prs }),
+        },
+      },
+    };
+    return client;
+  }
+
+  it("returns all open PRs mapped to PullRequest type", async () => {
+    const client = createMockClientForOpenPRs([
+      { number: 1, title: "PR 1", state: "open", labels: [{ name: "bug" }], head: { ref: "fix-1" } },
+      { number: 2, title: "PR 2", state: "open", labels: [], head: { ref: "feat-2" } },
+    ]);
+    const prs = await client.fetchOpenPRs("owner", "repo");
+    expect(prs).toHaveLength(2);
+    expect(prs[0]).toEqual({
+      key: "owner/repo#1",
+      owner: "owner",
+      repo: "repo",
+      number: 1,
+      title: "PR 1",
+      headRef: "fix-1",
+      state: "open",
+      labels: ["bug"],
+    });
+    expect(prs[1].headRef).toBe("feat-2");
+  });
+
+  it("returns empty array when no open PRs", async () => {
+    const client = createMockClientForOpenPRs([]);
+    const prs = await client.fetchOpenPRs("owner", "repo");
+    expect(prs).toHaveLength(0);
+  });
+});
+
+describe("fetchPRMergeableStatus", () => {
+  it("returns mergeable status from PR detail", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({
+            data: { mergeable: false, mergeable_state: "dirty" },
+          }),
+        },
+      },
+    };
+    const status = await client.fetchPRMergeableStatus("owner", "repo", 10);
+    expect(status).toEqual({ mergeable: false, mergeableState: "dirty" });
+  });
+
+  it("returns null mergeable when GitHub has not computed it yet", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({
+            data: { mergeable: null, mergeable_state: "unknown" },
+          }),
+        },
+      },
+    };
+    const status = await client.fetchPRMergeableStatus("owner", "repo", 5);
+    expect(status).toEqual({ mergeable: null, mergeableState: "unknown" });
+  });
+
+  it("returns true mergeable when PR is clean", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({
+            data: { mergeable: true, mergeable_state: "clean" },
+          }),
+        },
+      },
+    };
+    const status = await client.fetchPRMergeableStatus("owner", "repo", 3);
+    expect(status).toEqual({ mergeable: true, mergeableState: "clean" });
+  });
+});
