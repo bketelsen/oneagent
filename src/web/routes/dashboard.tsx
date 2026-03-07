@@ -40,6 +40,42 @@ export function dashboardRoute(ctx: AppContext): Hono {
             </div>
         }
 
+        <h2 class="text-xl font-semibold mb-4 mt-8">Recent Runs</h2>
+        {(() => {
+          const runs = ctx.getRecentRuns?.() ?? [];
+          if (runs.length === 0) {
+            return <p class="text-gray-500">No runs recorded yet</p>;
+          }
+          return (
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left">
+                <thead class="text-gray-400 border-b border-gray-700">
+                  <tr>
+                    <th class="px-4 py-2">Issue</th>
+                    <th class="px-4 py-2">Provider</th>
+                    <th class="px-4 py-2">Status</th>
+                    <th class="px-4 py-2">Started</th>
+                    <th class="px-4 py-2">Retries</th>
+                    <th class="px-4 py-2">Last Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runs.map((run) => (
+                    <tr class="border-b border-gray-800">
+                      <td class="px-4 py-2 text-blue-400">{run.issueKey}</td>
+                      <td class="px-4 py-2">{run.provider}</td>
+                      <td class="px-4 py-2">{run.status}</td>
+                      <td class="px-4 py-2 text-gray-400">{run.startedAt}</td>
+                      <td class="px-4 py-2">{run.retryCount}</td>
+                      <td class="px-4 py-2 text-red-400">{run.lastError ? (run.lastError.length > 100 ? run.lastError.slice(0, 100) + "..." : run.lastError) : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
+
         <div class="mt-6">
           <button
             onclick="fetch('/api/v1/refresh', {method:'POST'}).then(()=>location.reload())"

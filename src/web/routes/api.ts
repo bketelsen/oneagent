@@ -2,6 +2,16 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { SSEHub } from "../sse.js";
 
+export interface DashboardRun {
+  id: string;
+  issueKey: string;
+  provider: string;
+  status: string;
+  startedAt: string;
+  retryCount: number;
+  lastError?: string;
+}
+
 export interface AppContext {
   sseHub: SSEHub;
   onRefresh: () => Promise<void>;
@@ -10,6 +20,7 @@ export interface AppContext {
     retryQueue: string[];
     metrics: { tokensIn: number; tokensOut: number; runs: number };
   };
+  getRecentRuns?: () => DashboardRun[];
 }
 
 export function apiRoutes(ctx: AppContext): Hono {
