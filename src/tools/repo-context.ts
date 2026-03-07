@@ -9,6 +9,7 @@ const INSTRUCTION_FILES = [
   { path: "AGENTS.md", label: "AGENTS.md" },
   { path: ".github/copilot-instructions.md", label: ".github/copilot-instructions.md" },
   { path: ".cursorrules", label: ".cursorrules" },
+  { path: ".oneagent/instructions.md", label: ".oneagent/instructions.md" },
 ];
 
 export function discoverInstructionFiles(workingDir: string): string {

@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { discoverInstructionFiles, discoverCustomSkills, discoverRepoContext } from "../repo-context.js";
 
 describe("discoverInstructionFiles", () => {
@@ -51,6 +52,14 @@ describe("discoverInstructionFiles", () => {
     const result = discoverInstructionFiles(tempDir);
     expect(result).toContain("from CLAUDE.md");
     expect(result).toContain("from AGENTS.md");
+  });
+
+  it("discovers .oneagent/instructions.md", () => {
+    mkdirSync(join(tempDir, ".oneagent"), { recursive: true });
+    writeFileSync(join(tempDir, ".oneagent", "instructions.md"), "Use npm and vitest.");
+    const result = discoverInstructionFiles(tempDir);
+    expect(result).toContain("## Repository Instructions (from .oneagent/instructions.md)");
+    expect(result).toContain("Use npm and vitest.");
   });
 
   it("returns empty string when no instruction files found", () => {
@@ -175,5 +184,28 @@ Only skill body.`);
     const result = discoverRepoContext(tempDir);
     expect(result).not.toContain("Repository Instructions");
     expect(result).toContain("## Custom Skill: only-skill");
+  });
+});
+
+describe("real .oneagent files in this repo", () => {
+  const repoRoot = resolve(fileURLToPath(import.meta.url), "../../../..");
+
+  it("discovers .oneagent/instructions.md from this repo", () => {
+    const result = discoverInstructionFiles(repoRoot);
+    expect(result).toContain("## Repository Instructions (from .oneagent/instructions.md)");
+    expect(result).toContain("vitest");
+  });
+
+  it("discovers .oneagent/skills/pr-format.md from this repo", () => {
+    const result = discoverCustomSkills(repoRoot);
+    expect(result).toContain("## Custom Skill: pr-format");
+    expect(result).toContain("conventional commit");
+  });
+
+  it("discover_repo_context finds both instructions and skills in this repo", () => {
+    const result = discoverRepoContext(repoRoot);
+    expect(result).toContain("from .oneagent/instructions.md");
+    expect(result).toContain("## Custom Skill: pr-format");
+    expect(result).not.toBe("No project-specific instructions or skills found.");
   });
 });
