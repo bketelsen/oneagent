@@ -101,6 +101,10 @@ program
               id: r.id, status: r.status, startedAt: r.startedAt, provider: r.provider,
             })),
         },
+        runs: {
+          runsRepo,
+          eventsRepo,
+        },
         planning: {
           planningRepo,
           onChat: async function* (_sessionId: string, _message: string) {
