@@ -2,10 +2,13 @@ import { Hono } from "hono";
 import { Layout } from "../components/layout.js";
 import type { RunsRepo } from "../../db/runs.js";
 import type { RunEventsRepo } from "../../db/run-events.js";
+import type { MetricsRepo } from "../../db/metrics.js";
+import { getCostEstimate, formatCost } from "../../utils/cost.js";
 
 export interface RunsContext {
   runsRepo: RunsRepo;
   eventsRepo: RunEventsRepo;
+  metricsRepo?: MetricsRepo;
 }
 
 export function runsRoute(ctx: RunsContext): Hono {
@@ -27,6 +30,8 @@ export function runsRoute(ctx: RunsContext): Hono {
     }
 
     const events = ctx.eventsRepo.listByRun(id);
+    const runTokens = ctx.metricsRepo?.tokensByRun(id) ?? { tokensIn: 0, tokensOut: 0 };
+    const runCost = getCostEstimate(runTokens.tokensIn, runTokens.tokensOut);
 
     const statusColor =
       run.status === "running" ? "text-green-400" :
@@ -75,6 +80,14 @@ export function runsRoute(ctx: RunsContext): Hono {
             <div>
               <div class="text-sm text-gray-400">Retry Count</div>
               <div>{run.retryCount}</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-400">Tokens (In / Out)</div>
+              <div>{runTokens.tokensIn.toLocaleString()} / {runTokens.tokensOut.toLocaleString()}</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-400">Estimated Cost</div>
+              <div class="text-green-400">{formatCost(runCost)}</div>
             </div>
             {run.error && (
               <div class="col-span-2">

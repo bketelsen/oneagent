@@ -25,4 +25,11 @@ export class MetricsRepo {
     ).get() as any;
     return { tokensIn: row.ti, tokensOut: row.to_, runs: row.c };
   }
+
+  tokensByRun(runId: string): { tokensIn: number; tokensOut: number } {
+    const row = this.db.prepare(
+      "SELECT COALESCE(SUM(tokens_in),0) as ti, COALESCE(SUM(tokens_out),0) as to_ FROM metrics WHERE run_id = ?"
+    ).get(runId) as any;
+    return { tokensIn: row.ti, tokensOut: row.to_ };
+  }
 }

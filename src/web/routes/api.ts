@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { SSEHub } from "../sse.js";
 import type { DurationStats, StatusCounts, RunsRepo } from "../../db/runs.js";
+import { getCostEstimate } from "../../utils/cost.js";
 
 export interface DashboardRun {
   id: string;
@@ -90,7 +91,8 @@ export function apiRoutes(ctx: AppContext): Hono {
       failed: 0,
       running: 0,
     };
-    return c.json({ duration, tokens, runs });
+    const estimatedCost = getCostEstimate(tokens.tokensIn, tokens.tokensOut);
+    return c.json({ duration, tokens, runs, estimatedCost });
   });
 
   return api;
