@@ -127,3 +127,71 @@ describe("fetchIssues hasOpenPR population", () => {
     expect(issues[0].number).toBe(26);
   });
 });
+
+describe("fetchIssues OR logic with multiple labels", () => {
+  function createMockClientMultiLabel(issuesByLabel: Record<string, any[]>, prs: any[] = []) {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        issues: {
+          listForRepo: vi.fn().mockImplementation(({ labels }: { labels: string }) => {
+            return Promise.resolve({ data: issuesByLabel[labels] ?? [] });
+          }),
+        },
+        pulls: {
+          list: vi.fn().mockResolvedValue({ data: prs }),
+        },
+      },
+    };
+    return client;
+  }
+
+  it("fetches issues matching ANY of the configured labels (OR logic)", async () => {
+    const client = createMockClientMultiLabel({
+      "bug": [{ number: 1, title: "Bug issue", body: "", state: "open", labels: [{ name: "bug" }] }],
+      "feature": [{ number: 2, title: "Feature issue", body: "", state: "open", labels: [{ name: "feature" }] }],
+    });
+    const issues = await client.fetchIssues("owner", "repo", ["bug", "feature"]);
+    expect(issues).toHaveLength(2);
+    expect(issues.map((i) => i.number)).toContain(1);
+    expect(issues.map((i) => i.number)).toContain(2);
+  });
+
+  it("deduplicates issues that match multiple labels", async () => {
+    const sharedIssue = { number: 1, title: "Both labels", body: "", state: "open", labels: [{ name: "bug" }, { name: "feature" }] };
+    const client = createMockClientMultiLabel({
+      "bug": [sharedIssue],
+      "feature": [sharedIssue],
+    });
+    const issues = await client.fetchIssues("owner", "repo", ["bug", "feature"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].number).toBe(1);
+  });
+
+  it("works with a single label in the array", async () => {
+    const client = createMockClientMultiLabel({
+      "oneagent": [{ number: 5, title: "Solo", body: "", state: "open", labels: [{ name: "oneagent" }] }],
+    });
+    const issues = await client.fetchIssues("owner", "repo", ["oneagent"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].number).toBe(5);
+  });
+
+  it("returns empty array when no issues match any label", async () => {
+    const client = createMockClientMultiLabel({
+      "bug": [],
+      "feature": [],
+    });
+    const issues = await client.fetchIssues("owner", "repo", ["bug", "feature"]);
+    expect(issues).toHaveLength(0);
+  });
+
+  it("still supports a single string label for backward compatibility", async () => {
+    const client = createMockClientMultiLabel({
+      "oneagent": [{ number: 10, title: "Compat", body: "", state: "open", labels: [{ name: "oneagent" }] }],
+    });
+    const issues = await client.fetchIssues("owner", "repo", "oneagent");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].number).toBe(10);
+  });
+});
