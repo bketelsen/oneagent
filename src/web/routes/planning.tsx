@@ -23,7 +23,16 @@ export function planningRoute(ctx: PlanningContext): Hono {
         <div class="space-y-2">
           {sessions.map((s: PlanningSessionRow) => (
             <a href={`/planning/${s.id}`} class="block bg-gray-800 rounded p-4 hover:bg-gray-700">
-              <div class="font-medium">{s.id}</div>
+              <div class="flex justify-between items-center">
+                <div class="font-medium">{s.id}</div>
+                {s.status && (
+                  <span class={`text-xs px-2 py-0.5 rounded ${
+                    s.status === "published" ? "bg-green-900 text-green-300" :
+                    s.status === "approved" ? "bg-blue-900 text-blue-300" :
+                    "bg-gray-700 text-gray-400"
+                  }`}>{s.status}</span>
+                )}
+              </div>
               <div class="text-gray-500 text-sm">{s.issueKey ?? "No issue"} — {s.updatedAt}</div>
             </a>
           ))}
@@ -89,6 +98,38 @@ export function planningRoute(ctx: PlanningContext): Hono {
         `}} />
       </Layout>
     );
+  });
+
+  // Chat API endpoint
+  route.post("/:id/chat", async (c) => {
+    const id = c.req.param("id");
+    const { message } = await c.req.json<{ message: string }>();
+
+    // Save user message
+    const history = ctx.planningRepo.load(id);
+    history.push({ role: "user", content: message });
+
+    // Collect response from generator
+    let response = "";
+    for await (const chunk of ctx.onChat(id, message)) {
+      response += chunk;
+    }
+
+    // Save assistant response
+    history.push({ role: "assistant", content: response });
+    ctx.planningRepo.save(id, history);
+
+    // Return plan alongside the response if one exists
+    const plan = ctx.planningRepo.loadPlan(id);
+    return c.json({ response, plan });
+  });
+
+  // Plan state endpoint
+  route.get("/:id/plan", (c) => {
+    const id = c.req.param("id");
+    const plan = ctx.planningRepo.loadPlan(id);
+    if (!plan) return c.json({ plan: null });
+    return c.json({ plan });
   });
 
   return route;
