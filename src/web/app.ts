@@ -6,6 +6,7 @@ import { sprintRoute, type SprintContext } from "./routes/sprint.js";
 import { issuesRoute, type IssuesContext } from "./routes/issues.js";
 import { settingsRoute } from "./routes/settings.js";
 import { planningRoute, type PlanningContext } from "./routes/planning.js";
+import { runsRoute, type RunsContext } from "./routes/runs.js";
 import { requestLogger } from "../middleware/request-logger.js";
 import { healthRoute } from "./routes/health.js";
 import type { Config } from "../config/schema.js";
@@ -15,6 +16,7 @@ export interface FullAppContext {
   sprint?: SprintContext;
   issues?: IssuesContext;
   planning?: PlanningContext;
+  runs?: RunsContext;
   getConfig?: () => Config;
   logger?: Logger;
 }
@@ -44,6 +46,10 @@ export function createApp(ctx: AppContext | FullAppContext): Hono {
 
   if (isFullCtx && ctx.planning) {
     app.route("/planning", planningRoute(ctx.planning));
+  }
+
+  if (isFullCtx && ctx.runs) {
+    app.route("/runs", runsRoute(ctx.runs));
   }
 
   if (isFullCtx && ctx.getConfig) {

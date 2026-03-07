@@ -29,13 +29,13 @@ export function dashboardRoute(ctx: AppContext): Hono {
           ? <p class="text-gray-500">No agents running</p>
           : <div class="space-y-2">
               {state.running.map((r) => (
-                <div class="bg-gray-800 rounded-lg p-4 flex justify-between items-center">
+                <a href={`/runs/${r.runId}`} class="block bg-gray-800 rounded-lg p-4 flex justify-between items-center hover:bg-gray-700">
                   <div>
                     <span class="text-blue-400">{r.issueKey}</span>
                     <span class="ml-2 text-gray-500 text-sm">{r.provider}</span>
                   </div>
                   <span class="text-green-400 text-sm">running</span>
-                </div>
+                </a>
               ))}
             </div>
         }
