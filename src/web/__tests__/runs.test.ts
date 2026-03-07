@@ -87,6 +87,27 @@ describe("GET /runs/:id", () => {
     expect(html).toContain("#79");
   });
 
+  it("renders plain text fallback for malformed issueKey", async () => {
+    const now = new Date().toISOString();
+    runsRepo.insert({
+      id: "run-malformed",
+      issueKey: "just-some-text",
+      provider: "claude-code",
+      status: "running",
+      startedAt: now,
+      retryCount: 0,
+    });
+
+    const app = makeApp();
+    const res = await app.request("/runs/run-malformed");
+    expect(res.status).toBe(200);
+
+    const html = await res.text();
+    // Should render the raw issueKey as plain text, not as a link
+    expect(html).toContain("just-some-text");
+    expect(html).not.toContain('href="https://github.com/');
+  });
+
   it("returns 404 for unknown run ID", async () => {
     const app = makeApp();
     const res = await app.request("/runs/nonexistent");
