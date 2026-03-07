@@ -98,15 +98,19 @@ export function createPlanningTools(config: PlanningToolsConfig) {
               phase.tasks = phase.tasks.filter((t) => t.id !== op.taskId);
             }
             break;
-          case "update_task":
+          case "update_task": {
+            let found = false;
             for (const phase of plan.phases) {
               const task = phase.tasks.find((t) => t.id === op.taskId);
               if (task) {
                 Object.assign(task, op.updates);
+                found = true;
                 break;
               }
             }
+            if (!found) return `Error: Task "${op.taskId}" not found.`;
             break;
+          }
         }
       }
 
@@ -130,7 +134,7 @@ export function createPlanningTools(config: PlanningToolsConfig) {
       const label = labels[0];
       const { execFileSync } = await import("node:child_process");
 
-      // Topologically sort tasks: create leaves (no dependents) first
+      // Topologically sort tasks: process tasks with no unsatisfied dependencies first
       const allTasks = plan.phases.flatMap((p) => p.tasks);
       const idToTask = new Map(allTasks.map((t) => [t.id, t]));
       const idToIssueNumber = new Map<string, number>();
@@ -156,7 +160,15 @@ export function createPlanningTools(config: PlanningToolsConfig) {
       }
 
       const createdIssues: string[] = [];
+      const errors: string[] = [];
       for (const task of sorted) {
+        // Skip tasks that were already published (allows retrying partial publishes)
+        if (task.issueNumber) {
+          idToIssueNumber.set(task.id, task.issueNumber);
+          createdIssues.push(`#${task.issueNumber}: ${task.title}`);
+          continue;
+        }
+
         // Build issue body
         const bodyParts = [task.body];
         if (task.acceptanceCriteria.length > 0) {
@@ -174,28 +186,40 @@ export function createPlanningTools(config: PlanningToolsConfig) {
         bodyParts.push(`\n_Complexity: ${task.complexity}_`);
 
         const body = bodyParts.join("\n");
-        const result = execFileSync("gh", [
-          "issue", "create",
-          "--repo", `${owner}/${repo}`,
-          "--title", task.title,
-          "--body", body,
-          "--label", label,
-        ], { encoding: "utf-8" });
+        try {
+          const result = execFileSync("gh", [
+            "issue", "create",
+            "--repo", `${owner}/${repo}`,
+            "--title", task.title,
+            "--body", body,
+            "--label", label,
+          ], { encoding: "utf-8" });
 
-        // gh issue create outputs the URL like https://github.com/owner/repo/issues/123
-        const issueUrlMatch = result.match(/\/issues\/(\d+)/);
-        if (issueUrlMatch) {
-          const issueNumber = parseInt(issueUrlMatch[1], 10);
-          idToIssueNumber.set(task.id, issueNumber);
-          task.issueNumber = issueNumber;
-          createdIssues.push(`#${issueNumber}: ${task.title}`);
+          // gh issue create outputs the URL like https://github.com/owner/repo/issues/123
+          const issueUrlMatch = result.match(/\/issues\/(\d+)/);
+          if (issueUrlMatch) {
+            const issueNumber = parseInt(issueUrlMatch[1], 10);
+            idToIssueNumber.set(task.id, issueNumber);
+            task.issueNumber = issueNumber;
+            createdIssues.push(`#${issueNumber}: ${task.title}`);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          errors.push(`Failed to create issue for task "${task.id}": ${message}`);
         }
+
+        // Save after each task so retries skip already-published ones
+        planningRepo.savePlan(sessionId, plan);
       }
 
       plan.status = "published";
       planningRepo.savePlan(sessionId, plan);
 
-      return `Published ${createdIssues.length} issues:\n${createdIssues.map((i) => `- ${i}`).join("\n")}`;
+      let summary = `Published ${createdIssues.length} issues:\n${createdIssues.map((i) => `- ${i}`).join("\n")}`;
+      if (errors.length > 0) {
+        summary += `\n\nErrors (${errors.length}):\n${errors.map((e) => `- ${e}`).join("\n")}`;
+      }
+      return summary;
     },
   });
 
