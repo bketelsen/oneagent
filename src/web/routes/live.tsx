@@ -30,9 +30,14 @@ export function liveRoute(ctx: LiveContext): Hono {
 
         <div class="flex justify-between items-start mb-6">
           <h1 class="text-2xl font-bold">Live Run: {run.issueKey}</h1>
-          <button id="pause-btn" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm transition-colors">
-            Pause
-          </button>
+          <div class="flex gap-2">
+            <button id="pause-btn" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm transition-colors">
+              Pause
+            </button>
+            <button id="cancel-btn" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition-colors">
+              Cancel Run
+            </button>
+          </div>
         </div>
 
         <div id="run-meta" class="bg-gray-800 rounded-lg p-4 mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -69,6 +74,7 @@ export function liveRoute(ctx: LiveContext): Hono {
             var pauseBtn = document.getElementById('pause-btn');
             var metaAgent = document.getElementById('meta-agent');
             var metaTools = document.getElementById('meta-tools');
+            var cancelBtn = document.getElementById('cancel-btn');
             var autoScroll = true;
             var toolCount = 0;
 
@@ -78,6 +84,26 @@ export function liveRoute(ctx: LiveContext): Hono {
               pauseBtn.className = autoScroll
                 ? 'bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm transition-colors'
                 : 'bg-yellow-600 hover:bg-yellow-500 px-3 py-1 rounded text-sm transition-colors';
+            });
+
+            cancelBtn.addEventListener('click', function() {
+              cancelBtn.disabled = true;
+              cancelBtn.textContent = 'Cancelling...';
+              cancelBtn.className = 'bg-gray-500 px-3 py-1 rounded text-sm cursor-not-allowed';
+              fetch('/api/v1/runs/' + runId + '/cancel', { method: 'POST' })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                  if (data.ok) {
+                    cancelBtn.textContent = 'Cancelled';
+                  } else {
+                    cancelBtn.textContent = 'Cancel Failed';
+                  }
+                })
+                .catch(function() {
+                  cancelBtn.textContent = 'Cancel Failed';
+                  cancelBtn.disabled = false;
+                  cancelBtn.className = 'bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition-colors';
+                });
             });
 
             // Elapsed timer

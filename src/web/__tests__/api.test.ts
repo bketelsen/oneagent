@@ -102,6 +102,46 @@ describe("API routes", () => {
   });
 });
 
+describe("POST /api/v1/runs/:id/cancel", () => {
+  it("returns 200 with ok:true when cancelRun succeeds", async () => {
+    const app = createApp({
+      sseHub: new SSEHub(),
+      onRefresh: async () => {},
+      getState: () => ({ running: [], retryQueue: [], metrics: { tokensIn: 0, tokensOut: 0, runs: 0 } }),
+      cancelRun: (runId: string) => runId === "run-abc",
+    });
+    const res = await app.request("/api/v1/runs/run-abc/cancel", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+  });
+
+  it("returns 404 when run is not found or not running", async () => {
+    const app = createApp({
+      sseHub: new SSEHub(),
+      onRefresh: async () => {},
+      getState: () => ({ running: [], retryQueue: [], metrics: { tokensIn: 0, tokensOut: 0, runs: 0 } }),
+      cancelRun: () => false,
+    });
+    const res = await app.request("/api/v1/runs/nonexistent/cancel", { method: "POST" });
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe("Run not found or not running");
+  });
+
+  it("returns 404 when cancelRun callback is not provided", async () => {
+    const app = createApp({
+      sseHub: new SSEHub(),
+      onRefresh: async () => {},
+      getState: () => ({ running: [], retryQueue: [], metrics: { tokensIn: 0, tokensOut: 0, runs: 0 } }),
+    });
+    const res = await app.request("/api/v1/runs/run-abc/cancel", { method: "POST" });
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe("Cancel not available");
+  });
+});
+
 describe("GET /api/v1/runs/:id", () => {
   let db: Database.Database;
   let runsRepo: RunsRepo;
