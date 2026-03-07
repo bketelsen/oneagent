@@ -31,7 +31,7 @@ export interface CheckRun {
 export interface ReviewComment {
   id: number;
   body: string;
-  path: string;
+  path?: string;
   user: string;
   createdAt: string;
   pullRequestReviewId: number | null;

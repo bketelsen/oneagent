@@ -114,11 +114,16 @@ export class GitHubClient {
   }
 
   async fetchPRReviewComments(owner: string, repo: string, prNumber: number): Promise<ReviewComment[]> {
-    const { data } = await this.octokit.rest.pulls.listReviewComments({
-      owner, repo, pull_number: prNumber, per_page: 100, sort: "created", direction: "desc",
-    });
-    this.logger.debug({ owner, repo, prNumber, count: data.length }, "fetched PR review comments");
-    return data.map((c) => ({
+    const [{ data: inlineComments }, { data: issueComments }] = await Promise.all([
+      this.octokit.rest.pulls.listReviewComments({
+        owner, repo, pull_number: prNumber, per_page: 100, sort: "created", direction: "desc",
+      }),
+      this.octokit.rest.issues.listComments({
+        owner, repo, issue_number: prNumber, per_page: 100,
+      }),
+    ]);
+
+    const inline: ReviewComment[] = inlineComments.map((c) => ({
       id: c.id,
       body: c.body,
       path: c.path,
@@ -126,6 +131,24 @@ export class GitHubClient {
       createdAt: c.created_at,
       pullRequestReviewId: c.pull_request_review_id,
     }));
+
+    const issue: ReviewComment[] = issueComments.map((c) => ({
+      id: c.id,
+      body: c.body ?? "",
+      user: c.user?.login ?? "unknown",
+      createdAt: c.created_at,
+      pullRequestReviewId: null,
+    }));
+
+    const merged = [...inline, ...issue].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    this.logger.debug(
+      { owner, repo, prNumber, inlineCount: inline.length, issueCount: issue.length, totalCount: merged.length },
+      "fetched PR review comments (inline + issue)",
+    );
+    return merged;
   }
 
   async fetchPRsWithReviewFeedback(
