@@ -22,17 +22,17 @@ export function issuesRoute(ctx: IssuesContext): Hono {
         <h2 class="text-lg font-semibold mb-2">Run History</h2>
         <div class="space-y-2 mb-6">
           {history.map((run) => (
-            <div class="bg-gray-800 rounded p-3 flex justify-between text-sm">
+            <div class="bg-gray-100 dark:bg-gray-800 rounded p-3 flex justify-between text-sm">
               <span>{run.id}</span>
               <span>{run.provider}</span>
               <span class={run.status === "completed" ? "text-green-400" : "text-red-400"}>{run.status}</span>
-              <span class="text-gray-500">{run.startedAt}</span>
+              <span class="text-gray-400 dark:text-gray-500">{run.startedAt}</span>
             </div>
           ))}
         </div>
 
         <h2 class="text-lg font-semibold mb-2">Agent Output</h2>
-        <div class="bg-black rounded p-4 font-mono text-xs max-h-96 overflow-y-auto" id="output">
+        <div class="bg-gray-50 dark:bg-black rounded p-4 font-mono text-xs max-h-96 overflow-y-auto" id="output">
           {events
             .filter((e) => e.type === "text")
             .map((e) => <div>{String((e.payload as any).text ?? "")}</div>)}
