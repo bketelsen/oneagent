@@ -22,6 +22,7 @@ import { createLogger } from "./logger.js";
 import { createPlanningTools } from "./tools/planning.js";
 import { createPlannerAgent } from "./agents/planner.js";
 import { run } from "one-agent-sdk";
+import { cloneAndCapture } from "./tools/clone-and-capture.js";
 
 const program = new Command();
 program.name("oneagent").description("AI agent orchestrator for GitHub issues").version("0.1.0");
@@ -125,11 +126,28 @@ program
         },
         planning: {
           planningRepo,
+          repos: config.github.repos.map((r) => ({ owner: r.owner, repo: r.repo })),
+          onCreate: async (sessionId: string, owner: string, repo: string) => {
+            try {
+              const githubToken = config.github.token ?? process.env.GITHUB_TOKEN;
+              const context = await cloneAndCapture(owner, repo, githubToken);
+              planningRepo.saveContext(sessionId, context);
+              logger.info({ sessionId, repo: `${owner}/${repo}` }, "Captured repo context for planning session");
+            } catch (err) {
+              logger.error({ sessionId, err }, "Failed to capture repo context");
+            }
+          },
           onChat: async function* (sessionId: string, message: string) {
-            const firstRepo = config.github.repos[0];
+            // Determine which repo this session targets
+            const sessions = planningRepo.list();
+            const session = sessions.find((s) => s.id === sessionId);
+            const repoStr = session?.repo || `${config.github.repos[0].owner}/${config.github.repos[0].repo}`;
+            const [owner, repoName] = repoStr.split("/");
+            const repoConfig = config.github.repos.find((r) => r.owner === owner && r.repo === repoName) ?? config.github.repos[0];
+
             const planningTools = createPlanningTools({
               planningRepo,
-              repoConfig: firstRepo,
+              repoConfig,
             });
             const agent = createPlannerAgent([
               planningTools.createPlan,
@@ -137,18 +155,23 @@ program
               planningTools.publishPlan,
             ]);
 
-            // Load history for context
+            // Load history and repo context
             const history = planningRepo.load(sessionId);
             const historyText = history
               .map((m) => `${m.role}: ${m.content}`)
               .join("\n\n");
+            const repoContext = planningRepo.loadContext(sessionId);
 
-            // Inject sessionId and history into the prompt
-            const prompt =
-              agent.prompt +
-              `\n\nIMPORTANT: The current planning session ID is "${sessionId}". Always use this sessionId when calling create_plan, refine_plan, or publish_plan.` +
-              (historyText ? `\n\nConversation history:\n${historyText}` : "") +
-              `\n\nUser: ${message}`;
+            // Build prompt with repo context injected
+            let prompt = agent.prompt;
+            if (repoContext) {
+              prompt += `\n\n## Repository Context for ${repoStr}\n\n${repoContext}`;
+            }
+            prompt += `\n\nIMPORTANT: The current planning session ID is "${sessionId}". Always use this sessionId when calling create_plan, refine_plan, or publish_plan.`;
+            if (historyText) {
+              prompt += `\n\nConversation history:\n${historyText}`;
+            }
+            prompt += `\n\nUser: ${message}`;
 
             const agentRun = await run(prompt, {
               provider: config.agent.provider,
