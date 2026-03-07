@@ -11,6 +11,12 @@ vi.mock("one-agent-sdk", async (importOriginal) => {
 
 import { run as mockRunFn } from "one-agent-sdk";
 
+vi.mock("node:child_process", () => ({
+  execFile: vi.fn(),
+}));
+
+import { execFile } from "node:child_process";
+
 function makeMockGitHub() {
   return {
     fetchIssues: vi.fn().mockResolvedValue([]),
@@ -23,6 +29,8 @@ function makeMockGitHub() {
     fetchPRsWithReviewFeedback: vi.fn().mockResolvedValue([]),
     fetchPRDiff: vi.fn().mockResolvedValue(""),
     fetchCheckRuns: vi.fn().mockResolvedValue([]),
+    listOpenPRs: vi.fn().mockResolvedValue([]),
+    getPRMergeability: vi.fn().mockResolvedValue(true),
     parseDependencies: vi.fn().mockReturnValue([]),
     isIssueClosed: vi.fn().mockResolvedValue(true),
     issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
@@ -528,5 +536,144 @@ describe("Orchestrator", () => {
     expect(mockGitHub.parseDependencies).toHaveBeenCalledWith("No dependencies here");
     expect(mockGitHub.isIssueClosed).not.toHaveBeenCalled();
     expect(mockGitHub.addLabel).toHaveBeenCalled(); // dispatch was called
+  });
+
+  describe("rebaseConflictingPRs", () => {
+    it("rebases PRs that have merge conflicts", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockWorkspace = { ensure: vi.fn().mockReturnValue("/tmp/ws") };
+
+      mockGitHub.listOpenPRs.mockResolvedValue([
+        { key: "o/r#10", owner: "o", repo: "r", number: 10, title: "PR 10", headRef: "feature-branch", state: "open", labels: [] },
+      ]);
+      mockGitHub.getPRMergeability.mockResolvedValue(false);
+
+      // Mock execFile to succeed
+      const mockExecFile = execFile as unknown as ReturnType<typeof vi.fn>;
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "", "");
+      });
+
+      const orch = new Orchestrator(
+        mockConfig as any,
+        mockGitHub as any,
+        { config: mockConfig, github: mockGitHub, logger: mockLogger, workspace: mockWorkspace } as any,
+      );
+
+      await orch.rebaseConflictingPRs("o", "r");
+
+      expect(mockGitHub.listOpenPRs).toHaveBeenCalledWith("o", "r");
+      expect(mockGitHub.getPRMergeability).toHaveBeenCalledWith("o", "r", 10);
+      expect(mockExecFile).toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ prNumber: 10, branch: "feature-branch" }),
+        "successfully rebased PR",
+      );
+    });
+
+    it("posts comment on PR when rebase fails with unresolvable conflicts", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockWorkspace = { ensure: vi.fn().mockReturnValue("/tmp/ws") };
+
+      mockGitHub.listOpenPRs.mockResolvedValue([
+        { key: "o/r#20", owner: "o", repo: "r", number: 20, title: "PR 20", headRef: "conflict-branch", state: "open", labels: [] },
+      ]);
+      mockGitHub.getPRMergeability.mockResolvedValue(false);
+
+      // Mock execFile to fail on rebase step
+      const mockExecFile = execFile as unknown as ReturnType<typeof vi.fn>;
+      let callCount = 0;
+      mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: Function) => {
+        callCount++;
+        if (args[0] === "rebase") {
+          cb(new Error("CONFLICT: merge conflict in file.ts"), "", "");
+        } else {
+          cb(null, "", "");
+        }
+      });
+
+      const orch = new Orchestrator(
+        mockConfig as any,
+        mockGitHub as any,
+        { config: mockConfig, github: mockGitHub, logger: mockLogger, workspace: mockWorkspace } as any,
+      );
+
+      await orch.rebaseConflictingPRs("o", "r");
+
+      expect(mockGitHub.addComment).toHaveBeenCalledWith(
+        "o", "r", 20,
+        expect.stringContaining("Auto-rebase failed"),
+      );
+      expect(mockGitHub.addComment).toHaveBeenCalledWith(
+        "o", "r", 20,
+        expect.stringContaining("conflict-branch"),
+      );
+    });
+
+    it("skips PRs that are mergeable", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockWorkspace = { ensure: vi.fn().mockReturnValue("/tmp/ws") };
+
+      mockGitHub.listOpenPRs.mockResolvedValue([
+        { key: "o/r#30", owner: "o", repo: "r", number: 30, title: "PR 30", headRef: "clean-branch", state: "open", labels: [] },
+      ]);
+      mockGitHub.getPRMergeability.mockResolvedValue(true);
+
+      const mockExecFile = execFile as unknown as ReturnType<typeof vi.fn>;
+
+      const orch = new Orchestrator(
+        mockConfig as any,
+        mockGitHub as any,
+        { config: mockConfig, github: mockGitHub, logger: mockLogger, workspace: mockWorkspace } as any,
+      );
+
+      await orch.rebaseConflictingPRs("o", "r");
+
+      expect(mockExecFile).not.toHaveBeenCalled();
+      expect(mockGitHub.addComment).not.toHaveBeenCalled();
+    });
+
+    it("skips PRs where mergeability is null (unknown)", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+      const mockWorkspace = { ensure: vi.fn().mockReturnValue("/tmp/ws") };
+
+      mockGitHub.listOpenPRs.mockResolvedValue([
+        { key: "o/r#40", owner: "o", repo: "r", number: 40, title: "PR 40", headRef: "unknown-branch", state: "open", labels: [] },
+      ]);
+      mockGitHub.getPRMergeability.mockResolvedValue(null);
+
+      const mockExecFile = execFile as unknown as ReturnType<typeof vi.fn>;
+
+      const orch = new Orchestrator(
+        mockConfig as any,
+        mockGitHub as any,
+        { config: mockConfig, github: mockGitHub, logger: mockLogger, workspace: mockWorkspace } as any,
+      );
+
+      await orch.rebaseConflictingPRs("o", "r");
+
+      expect(mockExecFile).not.toHaveBeenCalled();
+    });
+
+    it("handles no open PRs gracefully", async () => {
+      const mockGitHub = makeMockGitHub();
+      const mockLogger = makeMockLogger();
+
+      mockGitHub.listOpenPRs.mockResolvedValue([]);
+
+      const orch = new Orchestrator(
+        mockConfig as any,
+        mockGitHub as any,
+        { config: mockConfig, github: mockGitHub, logger: mockLogger } as any,
+      );
+
+      await orch.rebaseConflictingPRs("o", "r");
+
+      expect(mockGitHub.getPRMergeability).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { run } from "one-agent-sdk";
 import type { StreamChunk, RunConfig } from "one-agent-sdk";
 import type { Config } from "../config/schema.js";
@@ -410,6 +412,11 @@ export class Orchestrator {
         data: { runId, issueKey: issue.key },
       });
 
+      // After successful completion, rebase any conflicting PRs
+      this.rebaseConflictingPRs(issue.owner, issue.repo).catch((err) => {
+        this.logger.error({ err, owner: issue.owner, repo: issue.repo }, "failed to rebase conflicting PRs");
+      });
+
     } catch (err) {
       stallDetector.stop();
 
@@ -433,6 +440,44 @@ export class Orchestrator {
         type: "agent:failed",
         data: { runId, issueKey: issue.key, error: errorMsg },
       });
+    }
+  }
+
+  async rebaseConflictingPRs(owner: string, repo: string): Promise<void> {
+    const execFileAsync = promisify(execFile);
+    const openPRs = await this.github.listOpenPRs(owner, repo);
+    this.logger.info({ owner, repo, openPRCount: openPRs.length }, "checking open PRs for merge conflicts");
+
+    for (const pr of openPRs) {
+      const mergeable = await this.github.getPRMergeability(owner, repo, pr.number);
+
+      if (mergeable === false) {
+        this.logger.info({ owner, repo, prNumber: pr.number, branch: pr.headRef }, "PR has conflicts, attempting rebase");
+
+        const workDir = this.deps.workspace?.ensure(`rebase-${owner}-${repo}-${pr.number}`);
+        if (!workDir) {
+          this.logger.warn({ prNumber: pr.number }, "no workspace available for rebase, skipping");
+          continue;
+        }
+
+        try {
+          // Clone, checkout branch, rebase onto main, and force-push
+          await execFileAsync("git", ["clone", `https://github.com/${owner}/${repo}.git`, "."], { cwd: workDir });
+          await execFileAsync("git", ["checkout", pr.headRef], { cwd: workDir });
+          await execFileAsync("git", ["rebase", "origin/main"], { cwd: workDir });
+          await execFileAsync("git", ["push", "--force-with-lease"], { cwd: workDir });
+
+          this.logger.info({ owner, repo, prNumber: pr.number, branch: pr.headRef }, "successfully rebased PR");
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          this.logger.info({ owner, repo, prNumber: pr.number, error: errorMsg }, "rebase failed due to unresolvable conflicts");
+
+          await this.github.addComment(
+            owner, repo, pr.number,
+            `Auto-rebase failed for branch \`${pr.headRef}\` onto \`main\`. The conflicts could not be resolved automatically. Please rebase manually.\n\nError: ${errorMsg}`,
+          );
+        }
+      }
     }
   }
 

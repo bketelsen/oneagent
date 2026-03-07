@@ -332,6 +332,96 @@ describe("fetchPRReviewComments", () => {
   });
 });
 
+describe("listOpenPRs", () => {
+  it("returns mapped open PRs", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          list: vi.fn().mockResolvedValue({
+            data: [
+              { number: 5, title: "PR 5", state: "open", labels: [{ name: "bug" }], head: { ref: "fix-5" } },
+              { number: 6, title: "PR 6", state: "open", labels: [], head: { ref: "feat-6" } },
+            ],
+          }),
+        },
+      },
+    };
+
+    const prs = await client.listOpenPRs("owner", "repo");
+    expect(prs).toHaveLength(2);
+    expect(prs[0]).toEqual({
+      key: "owner/repo#5",
+      owner: "owner",
+      repo: "repo",
+      number: 5,
+      title: "PR 5",
+      headRef: "fix-5",
+      state: "open",
+      labels: ["bug"],
+    });
+    expect(prs[1].headRef).toBe("feat-6");
+  });
+
+  it("returns empty array when no open PRs", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          list: vi.fn().mockResolvedValue({ data: [] }),
+        },
+      },
+    };
+
+    const prs = await client.listOpenPRs("owner", "repo");
+    expect(prs).toHaveLength(0);
+  });
+});
+
+describe("getPRMergeability", () => {
+  it("returns true when PR is mergeable", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({ data: { mergeable: true } }),
+        },
+      },
+    };
+
+    const result = await client.getPRMergeability("owner", "repo", 10);
+    expect(result).toBe(true);
+  });
+
+  it("returns false when PR has conflicts", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({ data: { mergeable: false } }),
+        },
+      },
+    };
+
+    const result = await client.getPRMergeability("owner", "repo", 10);
+    expect(result).toBe(false);
+  });
+
+  it("returns null when mergeability is unknown", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({ data: { mergeable: null } }),
+        },
+      },
+    };
+
+    const result = await client.getPRMergeability("owner", "repo", 10);
+    expect(result).toBeNull();
+  });
+});
+
 describe("fetchPRsWithReviewFeedback", () => {
   function createMockClientForFeedback(prs: any[], reviewCommentsByPR: Record<number, any[]>) {
     const client = new GitHubClient("fake-token");

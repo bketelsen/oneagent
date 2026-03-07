@@ -214,6 +214,26 @@ export class GitHubClient {
     return data.state === "closed";
   }
 
+  async listOpenPRs(owner: string, repo: string): Promise<PullRequest[]> {
+    const { data } = await this.octokit.rest.pulls.list({ owner, repo, state: "open", per_page: 100 });
+    this.logger.debug({ owner, repo, count: data.length }, "listed open PRs");
+    return data.map((pr) => ({
+      key: this.issueKey(owner, repo, pr.number),
+      owner, repo,
+      number: pr.number,
+      title: pr.title,
+      headRef: pr.head.ref,
+      state: pr.state,
+      labels: pr.labels.map((l) => l.name ?? ""),
+    }));
+  }
+
+  async getPRMergeability(owner: string, repo: string, number: number): Promise<boolean | null> {
+    const { data } = await this.octokit.rest.pulls.get({ owner, repo, pull_number: number });
+    this.logger.debug({ owner, repo, number, mergeable: data.mergeable }, "checked PR mergeability");
+    return data.mergeable;
+  }
+
   async fetchCheckRuns(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
     const { data } = await this.octokit.rest.checks.listForRef({ owner, repo, ref });
     this.logger.debug({ owner, repo, ref, count: data.check_runs.length }, "fetched check runs");
