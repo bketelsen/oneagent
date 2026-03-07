@@ -68,6 +68,8 @@ describe("API routes", () => {
     expect(body.runs.completed).toBe(3);
     expect(body.runs.failed).toBe(1);
     expect(body.runs.running).toBe(1);
+    // estimatedCost: (500/1M)*15 + (250/1M)*75 = 0.0075 + 0.01875 = 0.02625
+    expect(body.estimatedCost).toBeCloseTo(0.02625, 5);
   });
 
   it("GET /api/v1/metrics returns zeros when no callbacks provided", async () => {
@@ -96,6 +98,7 @@ describe("API routes", () => {
       failed: 0,
       running: 0,
     });
+    expect(body.estimatedCost).toBe(0);
   });
 });
 

@@ -1,15 +1,17 @@
 import { Hono } from "hono";
 import { Layout } from "../components/layout.js";
 import type { AppContext } from "./api.js";
+import { getCostEstimate, formatCost } from "../../utils/cost.js";
 
 export function dashboardRoute(ctx: AppContext): Hono {
   const route = new Hono();
 
   route.get("/", (c) => {
     const state = ctx.getState();
+    const estimatedCost = getCostEstimate(state.metrics.tokensIn, state.metrics.tokensOut);
     return c.html(
       <Layout title="Dashboard">
-        <div class="grid grid-cols-3 gap-4 mb-8">
+        <div class="grid grid-cols-4 gap-4 mb-8">
           <div class="bg-gray-800 rounded-lg p-4">
             <div class="text-sm text-gray-400">Active Agents</div>
             <div class="text-3xl font-bold">{state.running.length}</div>
@@ -21,6 +23,10 @@ export function dashboardRoute(ctx: AppContext): Hono {
           <div class="bg-gray-800 rounded-lg p-4">
             <div class="text-sm text-gray-400">Tokens Used</div>
             <div class="text-3xl font-bold">{state.metrics.tokensIn + state.metrics.tokensOut}</div>
+          </div>
+          <div class="bg-gray-800 rounded-lg p-4">
+            <div class="text-sm text-gray-400">Estimated Cost</div>
+            <div class="text-3xl font-bold text-green-400">{formatCost(estimatedCost)}</div>
           </div>
         </div>
 
