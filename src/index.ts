@@ -139,8 +139,7 @@ program
           },
           onChat: async function* (sessionId: string, message: string) {
             // Determine which repo this session targets
-            const sessions = planningRepo.list();
-            const session = sessions.find((s) => s.id === sessionId);
+            const session = planningRepo.getSession(sessionId);
             const repoStr = session?.repo || `${config.github.repos[0].owner}/${config.github.repos[0].repo}`;
             const [owner, repoName] = repoStr.split("/");
             const repoConfig = config.github.repos.find((r) => r.owner === owner && r.repo === repoName) ?? config.github.repos[0];

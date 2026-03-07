@@ -88,6 +88,12 @@ export class PlanningRepo {
     }
   }
 
+  getSession(id: string): PlanningSessionRow | null {
+    const r = this.db.prepare("SELECT id, issue_key, repo, status, created_at, updated_at FROM planning_sessions WHERE id = ?").get(id) as any;
+    if (!r) return null;
+    return { id: r.id, issueKey: r.issue_key, repo: r.repo ?? "", status: r.status, createdAt: r.created_at, updatedAt: r.updated_at };
+  }
+
   saveContext(id: string, context: string): void {
     this.db.prepare("UPDATE planning_sessions SET repo_context = ? WHERE id = ?").run(context, id);
   }

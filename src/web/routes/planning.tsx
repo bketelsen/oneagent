@@ -153,7 +153,7 @@ export function planningRoute(ctx: PlanningContext): Hono {
     const [owner, repo] = repoStr.split("/");
     const id = crypto.randomUUID();
     ctx.planningRepo.save(id, [], undefined, repoStr);
-    ctx.onCreate(id, owner, repo).catch(() => {});
+    await ctx.onCreate(id, owner, repo);
     return c.redirect(`/planning/${id}`);
   });
 
@@ -161,8 +161,7 @@ export function planningRoute(ctx: PlanningContext): Hono {
     const id = c.req.param("id");
     const history = ctx.planningRepo.load(id);
     const plan = ctx.planningRepo.loadPlan(id);
-    const sessions = ctx.planningRepo.list();
-    const session = sessions.find((s) => s.id === id);
+    const session = ctx.planningRepo.getSession(id);
     return c.html(
       <Layout title={`Planning: ${id}`}>
         <h1 class="text-xl font-bold mb-1">Planning Session</h1>
