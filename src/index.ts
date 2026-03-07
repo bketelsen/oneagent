@@ -61,7 +61,7 @@ program
     const sseHub = new SSEHub();
 
     const orchestrator = new Orchestrator(config, github, {
-      config, github, runsRepo, eventsRepo, metricsRepo, workspace, logger,
+      config, github, runsRepo, eventsRepo, metricsRepo, workspace, logger, sseHub,
     });
 
     if (opts.dryRun) {
