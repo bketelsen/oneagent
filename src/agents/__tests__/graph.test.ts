@@ -22,6 +22,17 @@ describe("buildAgentGraph", () => {
     expect(coder.handoffs).toContain("planner");
   });
 
+  it("includes the pr-reviewer agent", () => {
+    const graph = buildAgentGraph();
+    expect(graph.has("pr-reviewer")).toBe(true);
+  });
+
+  it("pr-reviewer has no handoffs", () => {
+    const graph = buildAgentGraph();
+    const prReviewer = graph.get("pr-reviewer")!;
+    expect(prReviewer.handoffs).toEqual([]);
+  });
+
   it("skill agents hand back to coder", () => {
     const graph = buildAgentGraph();
     const tdd = graph.get("tdd")!;

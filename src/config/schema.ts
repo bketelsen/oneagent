@@ -66,12 +66,19 @@ const webSchema = z.object({
 const prReviewSchema = z.object({
   enabled: z.boolean().default(true),
   pollInterval: z.number().min(5000).default(60000),
+  provider: z.string().default("claude-code"),
+  model: z.string().optional(),
+  autoMerge: z.boolean().default(false),
+  maxReviewCycles: z.number().min(1).default(2),
+  requireChecks: z.boolean().default(true),
 });
 
 const labelsSchema = z.object({
   eligible: z.string().default("oneagent"),
   inProgress: z.string().default("oneagent-working"),
   failed: z.string().default("oneagent-failed"),
+  needsReview: z.string().default("oneagent-needs-review"),
+  needsHuman: z.string().default("oneagent-needs-human"),
 });
 
 export const configSchema = z.object({

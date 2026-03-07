@@ -48,9 +48,16 @@ See `oneagent.example.yaml` for all options. Key settings:
 | `poll.reconcileInterval` | — | `15000` | Interval for stale run checks (ms) |
 | `prReview.enabled` | — | `true` | Enable PR review feedback iteration |
 | `prReview.pollInterval` | — | `60000` | Poll interval for review comments (ms) |
+| `prReview.provider` | — | `claude-code` | Provider for the review agent |
+| `prReview.model` | — | — | Model for the review agent (optional) |
+| `prReview.autoMerge` | — | `false` | Auto-merge PRs after review approval |
+| `prReview.maxReviewCycles` | — | `2` | Max review-fix cycles before escalation |
+| `prReview.requireChecks` | — | `true` | Require CI checks to pass before merge |
 | `labels.eligible` | — | `oneagent` | Label marking eligible issues |
 | `labels.inProgress` | — | `oneagent-working` | Label for in-progress issues |
 | `labels.failed` | — | `oneagent-failed` | Label for failed issues |
+| `labels.needsReview` | — | `oneagent-needs-review` | Label for PRs awaiting review |
+| `labels.needsHuman` | — | `oneagent-needs-human` | Label for PRs needing human review |
 
 ## Custom Skills / Repo Context
 
@@ -67,7 +74,7 @@ GitHub Issues (poll) → Orchestrator → one-agent-sdk run()
                       SQLite DB          Agent Graph
                           ↕              (coder → tdd, debugger,
                       Hono Dashboard      reviewer, pr-workflow,
-                      (SSE streaming)     planner)
+                      (SSE streaming)     planner, pr-reviewer)
 ```
 
 **Poll-Dispatch-Reconcile loop:**
@@ -82,6 +89,7 @@ GitHub Issues (poll) → Orchestrator → one-agent-sdk run()
 - **Dependency detection** — issues with "Depends on #N" / "Blocked by #N" / "Requires #N" in the body are held until the referenced issue is closed
 - **Skip resolved issues** — issues with a merged PR referencing them (Closes/Fixes/Resolves #N) are skipped, and a comment is posted suggesting closure
 - **PR review iteration** — polls open PRs for review comments and dispatches agents to address feedback (configurable via `prReview.enabled`)
+- **PR review agent** — after a coder run creates a PR, a dedicated review agent (configurable model/provider) independently reviews it, submitting GitHub PR reviews. Supports auto-merge gated by CI checks, review-fix cycles with configurable limits, and human escalation
 - **Auto-rebase** — after a run completes, conflicting open PRs are automatically rebased onto main
 - **Label cleanup** — `oneagent-working` label removed on completion; eligible label removed on success
 
@@ -123,8 +131,10 @@ SQLite migrations use a `schema_version` table. New migrations go in the `MIGRAT
 
 ## Labels
 
-OneAgent uses three labels (configurable):
+OneAgent uses five labels (configurable):
 
 - `oneagent` — marks issues eligible for agent work
 - `oneagent-working` — applied while an agent is running
 - `oneagent-failed` — applied when retries are exhausted
+- `oneagent-needs-review` — PR awaiting review agent (add manually to trigger review)
+- `oneagent-needs-human` — review cycles exhausted, human intervention needed

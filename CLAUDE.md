@@ -19,7 +19,7 @@ OneAgent is an AI agent orchestrator that polls GitHub issues for a configurable
 
 **Core loop (Orchestrator):** Poll GitHub -> Dispatch agent runs -> Reconcile stale runs. The `Orchestrator` class in `src/orchestrator/orchestrator.ts` owns this cycle, using `RunState` for in-memory tracking and `RetryQueue` for exponential backoff retries.
 
-**Agent graph:** Multi-agent system defined in `src/agents/graph.ts`. The `coder` agent is the entry point and can hand off to specialist agents (`tdd`, `debugger`, `reviewer`, `pr-workflow`, `planner`). Agents are `AgentDef` objects with name, prompt, and handoff declarations, executed via `one-agent-sdk`'s `run()`.
+**Agent graph:** Multi-agent system defined in `src/agents/graph.ts`. The `coder` agent is the entry point and can hand off to specialist agents (`tdd`, `debugger`, `reviewer`, `pr-workflow`, `planner`). The `pr-reviewer` agent operates independently (no handoffs) with its own model/provider. Agents are `AgentDef` objects with name, prompt, and handoff declarations, executed via `one-agent-sdk`'s `run()`.
 
 **Key modules:**
 
@@ -51,6 +51,7 @@ Config is loaded from `oneagent.yaml` (default path). Schema defined in `src/con
 - **Dependency detection:** Issues with "Depends on #N", "Blocked by #N", or "Requires #N" in the body are held until the referenced issue is closed.
 - **Skip resolved issues:** Issues with a merged PR that references them (Closes/Fixes/Resolves #N) are skipped, and a comment is posted suggesting closure.
 - **PR review iteration:** When enabled (`prReview.enabled`), polls open PRs for new review comments and dispatches agents to address feedback on the existing branch.
+- **PR review agent:** After a coder run produces a PR, a dedicated `pr-reviewer` agent (with its own model/provider from `prReview` config) independently reviews it. Submits GitHub PR reviews (approve/request-changes). On request-changes, the coder addresses feedback, then the reviewer re-reviews. After `maxReviewCycles` (default 2), escalates with `oneagent-needs-human` label. Auto-merge is opt-in (`prReview.autoMerge`) and gated by CI checks. Manual trigger: add `oneagent-needs-review` label to any PR.
 - **Auto-rebase:** After a run completes, checks other open PRs for merge conflicts and rebases them automatically using authenticated git URLs.
 - **Label cleanup:** Removes `oneagent-working` label on both success and failure; removes eligible label on success.
 

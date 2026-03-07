@@ -42,9 +42,9 @@ describe("Settings route", () => {
       poll: { interval: 30000, reconcileInterval: 15000 },
       project: { statuses: { todo: "Todo", inProgress: "In Progress", inReview: "In Review", done: "Done" } },
       workspace: { baseDir: "./workspaces", hooks: {} },
-      labels: { eligible: "oneagent", inProgress: "oneagent-working", failed: "oneagent-failed" },
+      labels: { eligible: "oneagent", inProgress: "oneagent-working", failed: "oneagent-failed", needsReview: "oneagent-needs-review", needsHuman: "oneagent-needs-human" },
       web: { port: 3000, enabled: true },
-      prReview: { enabled: true, pollInterval: 60000 },
+      prReview: { enabled: true, pollInterval: 60000, provider: "claude-code", autoMerge: false, maxReviewCycles: 3, requireChecks: true },
     };
 
     return createApp({

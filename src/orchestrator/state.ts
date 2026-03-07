@@ -46,3 +46,23 @@ export class RunState {
     if (entry) entry.lastActivity = new Date();
   }
 }
+
+export class ReviewCycleState {
+  private cycles = new Map<string, number>();
+
+  getCycleCount(prKey: string): number {
+    return this.cycles.get(prKey) ?? 0;
+  }
+
+  increment(prKey: string): void {
+    this.cycles.set(prKey, this.getCycleCount(prKey) + 1);
+  }
+
+  isExhausted(prKey: string, maxCycles: number): boolean {
+    return this.getCycleCount(prKey) >= maxCycles;
+  }
+
+  reset(prKey: string): void {
+    this.cycles.delete(prKey);
+  }
+}

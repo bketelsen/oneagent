@@ -6,16 +6,17 @@ import { run } from "one-agent-sdk";
 import type { StreamChunk, RunConfig } from "one-agent-sdk";
 import type { Config } from "../config/schema.js";
 import type { GitHubClient } from "../github/client.js";
-import type { Issue } from "../github/types.js";
+import type { Issue, PullRequest } from "../github/types.js";
 import type { RunsRepo } from "../db/runs.js";
 import type { RunEventsRepo } from "../db/run-events.js";
 import type { MetricsRepo } from "../db/metrics.js";
-import { RunState, type RunEntry } from "./state.js";
+import { RunState, ReviewCycleState, type RunEntry } from "./state.js";
 import { RetryQueue } from "./retry.js";
 import { Dispatcher } from "./dispatcher.js";
 import { PRMonitor, type ReviewFeedbackResult } from "./pr-monitor.js";
 import { buildAgentGraph, type AgentDef } from "../agents/graph.js";
 import { coderAgent } from "../agents/coder.js";
+import { prReviewerAgent } from "../agents/skills/pr-reviewer.js";
 import { createStallDetector } from "../middleware/stall-detector.js";
 import { logHandoff } from "../middleware/logging.js";
 import { WorkspaceManager } from "../workspace/manager.js";
@@ -45,6 +46,7 @@ export class Orchestrator {
   private reconcileTimer?: ReturnType<typeof setInterval>;
   private reviewTimer?: ReturnType<typeof setInterval>;
   private logger: Logger;
+  readonly reviewCycles = new ReviewCycleState();
 
   constructor(
     private config: Config,
@@ -73,6 +75,9 @@ export class Orchestrator {
       const reviewInterval = this.config.prReview.pollInterval;
       this.logger.info({ reviewPollInterval: reviewInterval }, "PR review feedback polling enabled");
       this.reviewTimer = setInterval(() => this.tickReviewFeedback(), reviewInterval);
+
+      // Also poll for PRs needing review (manual trigger via label)
+      setInterval(() => this.tickReviewDispatch(), reviewInterval);
     }
 
     this.tick();
@@ -152,6 +157,28 @@ export class Orchestrator {
       const issues = await this.github.fetchIssues(parsed.owner, parsed.repo, this.config.labels.eligible);
       const issue = issues.find((i) => i.key === key);
       if (issue) await this.dispatch(issue);
+    }
+  }
+
+  async tickReviewDispatch(): Promise<void> {
+    if (!this.config.prReview.enabled) return;
+
+    for (const repo of this.config.github.repos) {
+      const prs = await this.github.fetchPRsWithLabel(
+        repo.owner,
+        repo.repo,
+        this.config.labels.needsReview,
+      );
+
+      for (const pr of prs) {
+        const prRunKey = `pr-agent-review:${pr.key}`;
+        if (this.state.isRunning(prRunKey)) continue;
+        if (this.state.activeCount() >= this.config.concurrency.max) break;
+
+        if (!this.reviewCycles.isExhausted(pr.key, this.config.prReview.maxReviewCycles)) {
+          await this.dispatchReview(pr);
+        }
+      }
     }
   }
 
@@ -304,6 +331,21 @@ export class Orchestrator {
         type: "agent:completed",
         data: { runId, issueKey: prRunKey },
       });
+
+      // After coder addresses review feedback, re-dispatch review agent
+      if (this.config.prReview.enabled && prRunKey.startsWith("pr-review:")) {
+        const parsed = this.github.parseIssueKey(prRunKey.replace("pr-review:", ""));
+        if (parsed) {
+          const prs = await this.github.fetchOpenPRs(parsed.owner, parsed.repo);
+          const pr = prs.find((p) => p.key === prRunKey.replace("pr-review:", ""));
+          if (pr && !this.reviewCycles.isExhausted(pr.key, this.config.prReview.maxReviewCycles)) {
+            this.logger.info({ prKey: pr.key }, "coder addressed feedback, re-dispatching review");
+            await this.dispatchReview(pr).catch((err) => {
+              this.logger.error({ err, prKey: pr.key }, "failed to re-dispatch review agent");
+            });
+          }
+        }
+      }
     } catch (err) {
       stallDetector.stop();
       this.state.remove(prRunKey);
@@ -458,6 +500,17 @@ export class Orchestrator {
         this.logger.error({ err, owner: issue.owner, repo: issue.repo }, "rebase conflicting PRs failed");
       });
 
+      // After successful coder run, dispatch review agent if enabled
+      if (this.config.prReview.enabled) {
+        const pr = await this.findPRForIssue(issue.key);
+        if (pr) {
+          this.logger.info({ issueKey: issue.key, prKey: pr.key }, "coder run produced PR, dispatching review");
+          await this.dispatchReview(pr).catch((err) => {
+            this.logger.error({ err, issueKey: issue.key }, "failed to dispatch review agent");
+          });
+        }
+      }
+
     } catch (err) {
       stallDetector.stop();
 
@@ -481,6 +534,209 @@ export class Orchestrator {
         type: "agent:failed",
         data: { runId, issueKey: issue.key, error: errorMsg },
       });
+    }
+  }
+
+  private async findPRForIssue(issueKey: string): Promise<PullRequest | null> {
+    const parsed = this.github.parseIssueKey(issueKey);
+    if (!parsed) return null;
+
+    const prs = await this.github.fetchOpenPRs(parsed.owner, parsed.repo);
+    for (const pr of prs) {
+      if (pr.labels.includes(this.config.labels.inProgress)) {
+        return pr;
+      }
+    }
+    return null;
+  }
+
+  private async dispatchReview(pr: PullRequest): Promise<void> {
+    const prRunKey = `pr-agent-review:${pr.key}`;
+    if (this.state.isRunning(prRunKey)) return;
+
+    const runId = ulid();
+    const abortController = new AbortController();
+
+    await this.github.addLabel(pr.owner, pr.repo, pr.number, this.config.labels.needsReview);
+
+    const diff = await this.github.fetchPRDiff(pr.owner, pr.repo, pr.number);
+    const prompt = this.dispatcher.buildReviewDispatchPrompt(pr, diff);
+
+    const entry: RunEntry = {
+      runId,
+      issueKey: prRunKey,
+      provider: this.config.prReview.provider,
+      model: this.config.prReview.model,
+      startedAt: new Date(),
+      lastActivity: new Date(),
+      retryCount: 0,
+      abortController,
+      currentAgent: "pr-reviewer",
+      lastActivityDescription: "Starting review...",
+      toolCallCount: 0,
+    };
+
+    this.state.add(prRunKey, entry);
+    this.logger.info({ runId, prKey: pr.key }, "dispatching PR review agent");
+
+    this.deps.runsRepo?.insert({
+      id: runId,
+      issueKey: prRunKey,
+      provider: entry.provider,
+      model: entry.model,
+      status: "running",
+      startedAt: entry.startedAt.toISOString(),
+      retryCount: 0,
+    });
+
+    this.sseHub.emit("sse", {
+      type: "agent:started",
+      data: { runId, issueKey: prRunKey, provider: entry.provider },
+    });
+
+    this.executeReviewAgentRun(runId, prRunKey, pr, prompt, abortController).catch((err) => {
+      this.logger.error({ err, runId, prKey: pr.key }, "unhandled review agent error");
+    });
+  }
+
+  private async executeReviewAgentRun(
+    runId: string,
+    prRunKey: string,
+    pr: PullRequest,
+    prompt: string,
+    abortController: AbortController,
+  ): Promise<void> {
+    const stallDetector = createStallDetector(this.config.agent.stallTimeout, () => {
+      this.logger.warn({ runId, prRunKey }, "review agent stalled, aborting");
+      abortController.abort();
+    });
+
+    try {
+      const runConfig: RunConfig = {
+        provider: this.config.prReview.provider as any,
+        agent: prReviewerAgent as any,
+        agents: this.agentMap as any,
+        signal: abortController.signal,
+      };
+
+      const agentRun = await run(prompt, runConfig);
+      stallDetector.start();
+
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+
+      for await (const chunk of agentRun.stream) {
+        stallDetector.activity();
+        this.state.updateActivity(prRunKey);
+
+        const entry = this.state.get(prRunKey);
+        if (entry) {
+          if (chunk.type === "tool_call") {
+            const toolChunk = chunk as unknown as { toolName?: string };
+            entry.lastActivityDescription = `Called ${toolChunk.toolName ?? "unknown"}`;
+            entry.toolCallCount++;
+          } else if (chunk.type === "text") {
+            const textChunk = chunk as unknown as { content?: string };
+            const content = textChunk.content ?? "";
+            entry.lastActivityDescription = content.length > 80 ? content.slice(0, 80) : (content || "Reviewing...");
+          }
+        }
+
+        this.sseHub.emit("sse", {
+          type: `agent:${chunk.type}`,
+          data: { runId, ...chunk },
+        });
+
+        this.deps.eventsRepo?.insert(runId, chunk.type, chunk as unknown as Record<string, unknown>);
+
+        if (chunk.type === "done" && chunk.usage) {
+          totalInputTokens += chunk.usage.inputTokens;
+          totalOutputTokens += chunk.usage.outputTokens;
+        }
+      }
+
+      stallDetector.stop();
+
+      const durationMs = Date.now() - (this.state.get(prRunKey)?.startedAt.getTime() ?? Date.now());
+      this.state.remove(prRunKey);
+      this.deps.runsRepo?.completeRun(runId, "completed", new Date().toISOString(), durationMs);
+      this.logger.info({ runId, prRunKey, durationMs }, "review agent run completed");
+
+      if (totalInputTokens > 0 || totalOutputTokens > 0) {
+        this.deps.metricsRepo?.record({
+          runId,
+          provider: this.config.prReview.provider,
+          tokensIn: totalInputTokens,
+          tokensOut: totalOutputTokens,
+          durationMs,
+        });
+      }
+
+      this.sseHub.emit("sse", {
+        type: "agent:completed",
+        data: { runId, issueKey: prRunKey },
+      });
+
+      await this.onReviewComplete(pr);
+
+    } catch (err) {
+      stallDetector.stop();
+      this.state.remove(prRunKey);
+
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.deps.runsRepo?.completeRun(runId, "failed", new Date().toISOString(), 0, errorMsg);
+      this.logger.error({ err, runId, prRunKey }, "review agent run failed");
+
+      await this.github.removeLabel(pr.owner, pr.repo, pr.number, this.config.labels.needsReview);
+
+      this.sseHub.emit("sse", {
+        type: "agent:failed",
+        data: { runId, issueKey: prRunKey, error: errorMsg },
+      });
+    }
+  }
+
+  private async onReviewComplete(pr: PullRequest): Promise<void> {
+    await this.github.removeLabel(pr.owner, pr.repo, pr.number, this.config.labels.needsReview);
+
+    const reviews = await this.github.fetchPRReviews(pr.owner, pr.repo, pr.number);
+    const latestReview = reviews[0];
+
+    if (!latestReview || latestReview.state === "APPROVED") {
+      this.logger.info({ prKey: pr.key }, "PR approved by review agent");
+      this.reviewCycles.reset(pr.key);
+
+      if (this.config.prReview.autoMerge) {
+        await this.tryAutoMerge(pr);
+      }
+    } else if (latestReview.state === "CHANGES_REQUESTED") {
+      this.reviewCycles.increment(pr.key);
+      const cycleCount = this.reviewCycles.getCycleCount(pr.key);
+
+      if (this.reviewCycles.isExhausted(pr.key, this.config.prReview.maxReviewCycles)) {
+        this.logger.warn({ prKey: pr.key, cycleCount }, "max review cycles reached, escalating to human");
+        await this.github.addLabel(pr.owner, pr.repo, pr.number, this.config.labels.needsHuman);
+        this.reviewCycles.reset(pr.key);
+      } else {
+        this.logger.info({ prKey: pr.key, cycleCount }, "review requested changes, waiting for coder to address");
+        await this.github.addLabel(pr.owner, pr.repo, pr.number, this.config.labels.inProgress);
+      }
+    }
+  }
+
+  private async tryAutoMerge(pr: PullRequest): Promise<void> {
+    if (!this.config.prReview.requireChecks) {
+      await this.github.mergePR(pr.owner, pr.repo, pr.number);
+      this.logger.info({ prKey: pr.key }, "auto-merged PR (checks not required)");
+      return;
+    }
+
+    const passed = await this.github.allChecksPassed(pr.owner, pr.repo, pr.headRef);
+    if (passed) {
+      await this.github.mergePR(pr.owner, pr.repo, pr.number);
+      this.logger.info({ prKey: pr.key }, "auto-merged PR (all checks passed)");
+    } else {
+      this.logger.info({ prKey: pr.key }, "skipping auto-merge: CI checks not all passing");
     }
   }
 

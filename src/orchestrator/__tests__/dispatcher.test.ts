@@ -135,4 +135,27 @@ describe("Dispatcher", () => {
     );
     expect(prompt).not.toContain("Workspace:");
   });
+
+  it("builds a review dispatch prompt for the pr-reviewer agent", () => {
+    const dispatcher = new Dispatcher();
+    const prompt = dispatcher.buildReviewDispatchPrompt(
+      {
+        key: "o/r#10",
+        owner: "o",
+        repo: "r",
+        number: 10,
+        title: "Add feature",
+        headRef: "feature-branch",
+        state: "open",
+        labels: ["oneagent"],
+      },
+      "+added line\n-removed line",
+    );
+    expect(prompt).toContain("PR Review: o/r#10");
+    expect(prompt).toContain("Add feature");
+    expect(prompt).toContain("feature-branch");
+    expect(prompt).toContain("+added line");
+    expect(prompt).toContain("APPROVE");
+    expect(prompt).toContain("REQUEST_CHANGES");
+  });
 });

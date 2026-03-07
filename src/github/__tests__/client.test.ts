@@ -505,3 +505,175 @@ describe("fetchPRMergeableStatus", () => {
     expect(status).toEqual({ mergeable: true, mergeableState: "clean" });
   });
 });
+
+describe("submitPRReview", () => {
+  it("submits an APPROVE review", async () => {
+    const client = new GitHubClient("fake-token");
+    const createReview = vi.fn().mockResolvedValue({ data: {} });
+    (client as any).octokit = {
+      rest: { pulls: { createReview } },
+    };
+    await client.submitPRReview("owner", "repo", 10, "APPROVE", "Looks good!");
+    expect(createReview).toHaveBeenCalledWith({
+      owner: "owner", repo: "repo", pull_number: 10,
+      event: "APPROVE", body: "Looks good!", comments: undefined,
+    });
+  });
+
+  it("submits REQUEST_CHANGES review with inline comments", async () => {
+    const client = new GitHubClient("fake-token");
+    const createReview = vi.fn().mockResolvedValue({ data: {} });
+    (client as any).octokit = {
+      rest: { pulls: { createReview } },
+    };
+    const comments = [
+      { path: "src/index.ts", line: 10, body: "Fix this" },
+      { path: "src/utils.ts", line: 5, body: "Add error handling" },
+    ];
+    await client.submitPRReview("owner", "repo", 10, "REQUEST_CHANGES", "Needs work", comments);
+    expect(createReview).toHaveBeenCalledWith({
+      owner: "owner", repo: "repo", pull_number: 10,
+      event: "REQUEST_CHANGES", body: "Needs work", comments,
+    });
+  });
+});
+
+describe("mergePR", () => {
+  it("merges with squash by default", async () => {
+    const client = new GitHubClient("fake-token");
+    const merge = vi.fn().mockResolvedValue({ data: {} });
+    (client as any).octokit = {
+      rest: { pulls: { merge } },
+    };
+    await client.mergePR("owner", "repo", 10);
+    expect(merge).toHaveBeenCalledWith({
+      owner: "owner", repo: "repo", pull_number: 10, merge_method: "squash",
+    });
+  });
+
+  it("merges with specified merge method", async () => {
+    const client = new GitHubClient("fake-token");
+    const merge = vi.fn().mockResolvedValue({ data: {} });
+    (client as any).octokit = {
+      rest: { pulls: { merge } },
+    };
+    await client.mergePR("owner", "repo", 10, "rebase");
+    expect(merge).toHaveBeenCalledWith({
+      owner: "owner", repo: "repo", pull_number: 10, merge_method: "rebase",
+    });
+  });
+});
+
+describe("fetchPRReviews", () => {
+  it("returns reviews sorted by most recent first", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          listReviews: vi.fn().mockResolvedValue({
+            data: [
+              { id: 1, state: "APPROVED", user: { login: "alice" }, submitted_at: "2026-01-01T00:00:00Z" },
+              { id: 2, state: "CHANGES_REQUESTED", user: { login: "bob" }, submitted_at: "2026-01-02T00:00:00Z" },
+            ],
+          }),
+        },
+      },
+    };
+
+    const reviews = await client.fetchPRReviews("owner", "repo", 10);
+    expect(reviews).toHaveLength(2);
+    expect(reviews[0].state).toBe("CHANGES_REQUESTED"); // Most recent first
+    expect(reviews[1].state).toBe("APPROVED");
+  });
+
+  it("handles null user", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          listReviews: vi.fn().mockResolvedValue({
+            data: [{ id: 1, state: "APPROVED", user: null, submitted_at: "2026-01-01T00:00:00Z" }],
+          }),
+        },
+      },
+    };
+
+    const reviews = await client.fetchPRReviews("owner", "repo", 10);
+    expect(reviews[0].user).toBe("unknown");
+  });
+
+  it("returns empty array when no reviews", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        pulls: {
+          listReviews: vi.fn().mockResolvedValue({ data: [] }),
+        },
+      },
+    };
+
+    const reviews = await client.fetchPRReviews("owner", "repo", 10);
+    expect(reviews).toHaveLength(0);
+  });
+});
+
+describe("allChecksPassed", () => {
+  it("returns true when all checks completed successfully", async () => {
+    const client = new GitHubClient("fake-token");
+    const listForRef = vi.fn().mockResolvedValue({
+      data: {
+        check_runs: [
+          { id: 1, name: "build", status: "completed", conclusion: "success" },
+          { id: 2, name: "test", status: "completed", conclusion: "success" },
+        ],
+      },
+    });
+    (client as any).octokit = {
+      rest: { checks: { listForRef } },
+    };
+    expect(await client.allChecksPassed("owner", "repo", "abc123")).toBe(true);
+  });
+
+  it("returns false when any check failed", async () => {
+    const client = new GitHubClient("fake-token");
+    const listForRef = vi.fn().mockResolvedValue({
+      data: {
+        check_runs: [
+          { id: 1, name: "build", status: "completed", conclusion: "success" },
+          { id: 2, name: "test", status: "completed", conclusion: "failure" },
+        ],
+      },
+    });
+    (client as any).octokit = {
+      rest: { checks: { listForRef } },
+    };
+    expect(await client.allChecksPassed("owner", "repo", "abc123")).toBe(false);
+  });
+
+  it("returns false when any check is still in progress", async () => {
+    const client = new GitHubClient("fake-token");
+    const listForRef = vi.fn().mockResolvedValue({
+      data: {
+        check_runs: [
+          { id: 1, name: "build", status: "completed", conclusion: "success" },
+          { id: 2, name: "test", status: "in_progress", conclusion: null },
+        ],
+      },
+    });
+    (client as any).octokit = {
+      rest: { checks: { listForRef } },
+    };
+    expect(await client.allChecksPassed("owner", "repo", "abc123")).toBe(false);
+  });
+
+  it("returns true when there are no check runs", async () => {
+    const client = new GitHubClient("fake-token");
+    const listForRef = vi.fn().mockResolvedValue({
+      data: { check_runs: [] },
+    });
+    (client as any).octokit = {
+      rest: { checks: { listForRef } },
+    };
+    expect(await client.allChecksPassed("owner", "repo", "abc123")).toBe(true);
+  });
+});

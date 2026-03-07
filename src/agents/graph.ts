@@ -4,6 +4,7 @@ import { debuggerAgent } from "./skills/debugger.js";
 import { reviewerAgent } from "./skills/reviewer.js";
 import { prWorkflowAgent } from "./skills/pr-workflow.js";
 import { plannerAgent } from "./planner.js";
+import { prReviewerAgent } from "./skills/pr-reviewer.js";
 
 /** Definition of a single agent in the orchestration graph. */
 export interface AgentDef {
@@ -31,6 +32,7 @@ export function buildAgentGraph(): Map<string, AgentDef> {
     reviewerAgent,
     prWorkflowAgent,
     plannerAgent,
+    prReviewerAgent,
   ];
   return new Map(agents.map((a) => [a.name, a]));
 }

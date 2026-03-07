@@ -251,4 +251,55 @@ export class GitHubClient {
       conclusion: cr.conclusion,
     }));
   }
+
+  async submitPRReview(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    event: "APPROVE" | "REQUEST_CHANGES",
+    body: string,
+    comments?: Array<{ path: string; line: number; body: string }>,
+  ): Promise<void> {
+    await this.octokit.rest.pulls.createReview({
+      owner, repo, pull_number: prNumber, event, body, comments,
+    });
+    this.logger.debug({ owner, repo, prNumber, event }, "submitted PR review");
+  }
+
+  async mergePR(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    mergeMethod: "squash" | "merge" | "rebase" = "squash",
+  ): Promise<void> {
+    await this.octokit.rest.pulls.merge({
+      owner, repo, pull_number: prNumber, merge_method: mergeMethod,
+    });
+    this.logger.debug({ owner, repo, prNumber, mergeMethod }, "merged PR");
+  }
+
+  async fetchPRReviews(
+    owner: string,
+    repo: string,
+    prNumber: number,
+  ): Promise<Array<{ id: number; state: string; user: string }>> {
+    const { data } = await this.octokit.rest.pulls.listReviews({
+      owner,
+      repo,
+      pull_number: prNumber,
+    });
+    this.logger.debug({ owner, repo, prNumber, count: data.length }, "fetched PR reviews");
+    return data
+      .sort((a, b) => new Date(b.submitted_at ?? 0).getTime() - new Date(a.submitted_at ?? 0).getTime())
+      .map((r) => ({
+        id: r.id,
+        state: r.state,
+        user: r.user?.login ?? "unknown",
+      }));
+  }
+
+  async allChecksPassed(owner: string, repo: string, ref: string): Promise<boolean> {
+    const checks = await this.fetchCheckRuns(owner, repo, ref);
+    return checks.every((c) => c.status === "completed" && c.conclusion === "success");
+  }
 }
