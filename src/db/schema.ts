@@ -6,10 +6,11 @@ CREATE TABLE IF NOT EXISTS runs (
   model       TEXT,
   status      TEXT NOT NULL,
   started_at  TEXT NOT NULL,
-  finished_at TEXT,
-  retry_count INTEGER DEFAULT 0,
-  error       TEXT,
-  token_usage TEXT
+  completed_at TEXT,
+  duration_ms  INTEGER,
+  retry_count  INTEGER DEFAULT 0,
+  error        TEXT,
+  token_usage  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS run_events (

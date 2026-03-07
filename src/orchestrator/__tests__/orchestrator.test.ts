@@ -1,25 +1,39 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Orchestrator } from "../orchestrator.js";
 
-const mockGitHub = {
-  fetchIssues: vi.fn().mockResolvedValue([]),
-  addLabel: vi.fn().mockResolvedValue(undefined),
-  removeLabel: vi.fn().mockResolvedValue(undefined),
-  issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
-  parseIssueKey: (key: string) => {
-    const match = key.match(/^(.+)\/(.+)#(\d+)$/);
-    if (!match) return null;
-    return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
-  },
-};
+vi.mock("one-agent-sdk", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    run: vi.fn(),
+  };
+});
 
-const mockLogger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-  child: vi.fn().mockReturnThis(),
-};
+import { run as mockRunFn } from "one-agent-sdk";
+
+function makeMockGitHub() {
+  return {
+    fetchIssues: vi.fn().mockResolvedValue([]),
+    addLabel: vi.fn().mockResolvedValue(undefined),
+    removeLabel: vi.fn().mockResolvedValue(undefined),
+    issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
+    parseIssueKey: (key: string) => {
+      const match = key.match(/^(.+)\/(.+)#(\d+)$/);
+      if (!match) return null;
+      return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
+    },
+  };
+}
+
+function makeMockLogger() {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn().mockReturnThis(),
+  };
+}
 
 const mockConfig = {
   github: { repos: [{ owner: "o", repo: "r", labels: ["oneagent"] }] },
@@ -33,14 +47,128 @@ const mockConfig = {
 };
 
 describe("Orchestrator", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("can be constructed", () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
     const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
     expect(orch).toBeDefined();
   });
 
   it("tick fetches issues from all repos", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
     const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
     await orch.tick();
     expect(mockGitHub.fetchIssues).toHaveBeenCalledWith("o", "r", ["oneagent"]);
+  });
+
+  it("calls completeRun on success with duration", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#1",
+      owner: "o",
+      repo: "r",
+      number: 1,
+      title: "Test issue",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 100, outputTokens: 50 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+      } as any,
+    );
+
+    await orch.tick();
+
+    // Wait for the background executeRun to finish
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(mockRunsRepo.insert).toHaveBeenCalledTimes(1);
+    expect(mockRunsRepo.completeRun).toHaveBeenCalledTimes(1);
+    expect(mockRunsRepo.updateStatus).not.toHaveBeenCalled();
+
+    const [id, status, completedAt, durationMs] = mockRunsRepo.completeRun.mock.calls[0];
+    expect(status).toBe("completed");
+    expect(typeof completedAt).toBe("string");
+    expect(typeof durationMs).toBe("number");
+    expect(durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("calls completeRun on failure with duration and error", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const mockRunsRepo = {
+      insert: vi.fn(),
+      completeRun: vi.fn(),
+      updateStatus: vi.fn(),
+    };
+
+    const issue = {
+      key: "o/r#2",
+      owner: "o",
+      repo: "r",
+      number: 2,
+      title: "Failing issue",
+      body: "test body",
+      labels: ["oneagent"],
+      hasOpenPR: false,
+    };
+
+    mockGitHub.fetchIssues.mockResolvedValue([issue]);
+
+    (mockRunFn as any).mockRejectedValue(new Error("agent crashed"));
+
+    const orch = new Orchestrator(
+      mockConfig as any,
+      mockGitHub as any,
+      {
+        config: mockConfig,
+        github: mockGitHub,
+        runsRepo: mockRunsRepo,
+        logger: mockLogger,
+      } as any,
+    );
+
+    await orch.tick();
+
+    // Wait for the background executeRun to finish
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(mockRunsRepo.insert).toHaveBeenCalledTimes(1);
+    expect(mockRunsRepo.completeRun).toHaveBeenCalledTimes(1);
+    expect(mockRunsRepo.updateStatus).not.toHaveBeenCalled();
+
+    const [id, status, completedAt, durationMs, error] = mockRunsRepo.completeRun.mock.calls[0];
+    expect(status).toBe("failed");
+    expect(typeof completedAt).toBe("string");
+    expect(typeof durationMs).toBe("number");
+    expect(durationMs).toBeGreaterThanOrEqual(0);
+    expect(error).toBe("agent crashed");
   });
 });

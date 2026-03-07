@@ -63,8 +63,8 @@ export function runsRoute(ctx: RunsContext): Hono {
               <div>{run.startedAt}</div>
             </div>
             <div>
-              <div class="text-sm text-gray-400">Finished At</div>
-              <div>{run.finishedAt ?? "—"}</div>
+              <div class="text-sm text-gray-400">Completed At</div>
+              <div>{run.completedAt ?? "—"}</div>
             </div>
             {run.model && (
               <div>
