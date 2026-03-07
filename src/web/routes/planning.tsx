@@ -7,6 +7,98 @@ export interface PlanningContext {
   onChat: (sessionId: string, message: string) => AsyncGenerator<string>;
 }
 
+function renderPlan(plan: any) {
+  return (
+    <div class="space-y-4">
+      <h3 class="text-lg font-bold">{plan.title}</h3>
+      <p class="text-gray-400">{plan.description}</p>
+      {plan.phases.map((phase: any) => (
+        <div class="border border-gray-700 rounded p-3">
+          <h4 class="font-semibold text-blue-300 mb-2">{phase.name}</h4>
+          <div class="space-y-2">
+            {phase.tasks.map((task: any) => (
+              <div class="bg-gray-900 rounded p-2">
+                <div class="flex items-center gap-2">
+                  <span class={`text-xs px-1.5 py-0.5 rounded ${
+                    task.complexity === "low" ? "bg-green-900 text-green-300" :
+                    task.complexity === "medium" ? "bg-yellow-900 text-yellow-300" :
+                    "bg-red-900 text-red-300"
+                  }`}>{task.complexity}</span>
+                  <span class="font-medium">{task.title}</span>
+                  {task.issueNumber && (
+                    <span class="text-blue-400 text-sm">#{task.issueNumber}</span>
+                  )}
+                </div>
+                {task.dependsOn.length > 0 && (
+                  <div class="text-xs text-gray-500 mt-1">Depends on: {task.dependsOn.join(", ")}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function planningScript(id: string): string {
+  return `
+    const chatEl = document.getElementById('chat');
+    const form = document.getElementById('chat-form');
+    const publishBtn = document.getElementById('publish-btn');
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const input = form.message;
+      const msg = input.value;
+      if (!msg.trim()) return;
+      const userDiv = document.createElement('div');
+      userDiv.className = 'text-blue-300';
+      userDiv.innerHTML = '<span class="font-semibold">user:</span> ' + msg;
+      chatEl.appendChild(userDiv);
+      input.value = '';
+      const sendBtn = form.querySelector('button[type="submit"]');
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Thinking...';
+      try {
+        const res = await fetch('/planning/${id}/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg }),
+        });
+        const data = await res.json();
+        const assistDiv = document.createElement('div');
+        assistDiv.className = 'text-gray-300';
+        assistDiv.innerHTML = '<span class="font-semibold">assistant:</span> ' + (data.response || '');
+        chatEl.appendChild(assistDiv);
+        chatEl.scrollTop = chatEl.scrollHeight;
+        if (data.plan) {
+          location.reload();
+        }
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+      }
+    };
+
+    if (publishBtn) {
+      publishBtn.onclick = async () => {
+        if (!confirm('Publish all tasks as GitHub issues?')) return;
+        publishBtn.disabled = true;
+        publishBtn.textContent = 'Publishing...';
+        const res = await fetch('/planning/${id}/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'Please publish the plan now.' }),
+        });
+        const data = await res.json();
+        alert(data.response || 'Published!');
+        location.reload();
+      };
+    }
+  `;
+}
+
 export function planningRoute(ctx: PlanningContext): Hono {
   const route = new Hono();
 
@@ -50,52 +142,47 @@ export function planningRoute(ctx: PlanningContext): Hono {
   route.get("/:id", (c) => {
     const id = c.req.param("id");
     const history = ctx.planningRepo.load(id);
+    const plan = ctx.planningRepo.loadPlan(id);
     return c.html(
       <Layout title={`Planning: ${id}`}>
         <h1 class="text-xl font-bold mb-4">Planning Session</h1>
-        <div id="chat" class="bg-gray-800 rounded p-4 max-h-96 overflow-y-auto mb-4 space-y-3">
-          {history.map((msg) => (
-            <div class={msg.role === "user" ? "text-blue-300" : "text-gray-300"}>
-              <span class="font-semibold">{msg.role}:</span> {msg.content}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Chat panel */}
+          <div>
+            <h2 class="text-lg font-semibold mb-2">Chat</h2>
+            <div id="chat" class="bg-gray-800 rounded p-4 max-h-[60vh] overflow-y-auto mb-4 space-y-3">
+              {history.map((msg) => (
+                <div class={msg.role === "user" ? "text-blue-300" : "text-gray-300"}>
+                  <span class="font-semibold">{msg.role}:</span> {msg.content}
+                </div>
+              ))}
             </div>
-          ))}
+            <form id="chat-form" class="flex gap-2">
+              <input type="text" name="message" placeholder="Type a message..."
+                class="flex-1 bg-gray-700 rounded px-4 py-2 text-sm" autocomplete="off" />
+              <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">Send</button>
+            </form>
+          </div>
+
+          {/* Plan viewer panel */}
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <h2 class="text-lg font-semibold">Plan</h2>
+              {plan?.status === "draft" && (
+                <button id="publish-btn" class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm">
+                  Publish to GitHub
+                </button>
+              )}
+              {plan?.status === "published" && (
+                <span class="text-green-400 text-sm">Published</span>
+              )}
+            </div>
+            <div id="plan-viewer" class="bg-gray-800 rounded p-4 max-h-[60vh] overflow-y-auto">
+              {plan ? renderPlan(plan) : <p class="text-gray-500">No plan yet. Start chatting to build one.</p>}
+            </div>
+          </div>
         </div>
-        <form id="chat-form" class="flex gap-2">
-          <input
-            type="text"
-            name="message"
-            placeholder="Type a message..."
-            class="flex-1 bg-gray-700 rounded px-4 py-2 text-sm"
-            autocomplete="off"
-          />
-          <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">Send</button>
-        </form>
-        <script dangerouslySetInnerHTML={{ __html: `
-          const chatEl = document.getElementById('chat');
-          const form = document.getElementById('chat-form');
-          form.onsubmit = async (e) => {
-            e.preventDefault();
-            const input = form.message;
-            const msg = input.value;
-            if (!msg.trim()) return;
-            const userDiv = document.createElement('div');
-            userDiv.className = 'text-blue-300';
-            userDiv.innerHTML = '<span class="font-semibold">user:</span> ' + msg;
-            chatEl.appendChild(userDiv);
-            input.value = '';
-            const res = await fetch('/api/v1/planning/${id}/chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message: msg }),
-            });
-            const data = await res.json();
-            const assistDiv = document.createElement('div');
-            assistDiv.className = 'text-gray-300';
-            assistDiv.innerHTML = '<span class="font-semibold">assistant:</span> ' + (data.response || '');
-            chatEl.appendChild(assistDiv);
-            chatEl.scrollTop = chatEl.scrollHeight;
-          };
-        `}} />
+        <script dangerouslySetInnerHTML={{ __html: planningScript(id) }} />
       </Layout>
     );
   });
