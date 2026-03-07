@@ -104,7 +104,7 @@ describe("GET /runs/:id", () => {
       startedAt: now,
       retryCount: 1,
     });
-    runsRepo.updateStatus("run-fail", "failed", now, "timeout exceeded");
+    runsRepo.completeRun("run-fail", "failed", now, 5000, "timeout exceeded");
 
     const app = makeApp();
     const res = await app.request("/runs/run-fail");

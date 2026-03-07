@@ -7,10 +7,18 @@ export interface RunRow {
   model?: string;
   status: string;
   startedAt: string;
-  finishedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
   retryCount: number;
   error?: string;
   tokenUsage?: string;
+}
+
+export interface DurationStats {
+  avgDurationMs: number;
+  minDurationMs: number;
+  maxDurationMs: number;
+  totalRuns: number;
 }
 
 export class RunsRepo {
@@ -23,10 +31,34 @@ export class RunsRepo {
     `).run(run.id, run.issueKey, run.provider, run.model ?? null, run.status, run.startedAt, run.retryCount);
   }
 
-  updateStatus(id: string, status: string, finishedAt?: string, error?: string): void {
+  updateStatus(id: string, status: string, completedAt?: string, error?: string): void {
     this.db.prepare(`
-      UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE id = ?
-    `).run(status, finishedAt ?? null, error ?? null, id);
+      UPDATE runs SET status = ?, completed_at = ?, error = ? WHERE id = ?
+    `).run(status, completedAt ?? null, error ?? null, id);
+  }
+
+  completeRun(id: string, status: string, completedAt: string, durationMs: number, error?: string): void {
+    this.db.prepare(`
+      UPDATE runs SET status = ?, completed_at = ?, duration_ms = ?, error = ? WHERE id = ?
+    `).run(status, completedAt, durationMs, error ?? null, id);
+  }
+
+  getDurationStats(): DurationStats {
+    const row = this.db.prepare(`
+      SELECT
+        COALESCE(AVG(duration_ms), 0) as avg_duration,
+        COALESCE(MIN(duration_ms), 0) as min_duration,
+        COALESCE(MAX(duration_ms), 0) as max_duration,
+        COUNT(*) as total_runs
+      FROM runs
+      WHERE duration_ms IS NOT NULL
+    `).get() as any;
+    return {
+      avgDurationMs: row.avg_duration,
+      minDurationMs: row.min_duration,
+      maxDurationMs: row.max_duration,
+      totalRuns: row.total_runs,
+    };
   }
 
   getById(id: string): RunRow | undefined {
@@ -47,13 +79,14 @@ export class RunsRepo {
       id: row.id,
       issueKey: row.issue_key,
       provider: row.provider,
-      model: row.model,
+      model: row.model ?? undefined,
       status: row.status,
       startedAt: row.started_at,
-      finishedAt: row.finished_at,
+      completedAt: row.completed_at ?? undefined,
+      durationMs: row.duration_ms ?? undefined,
       retryCount: row.retry_count,
-      error: row.error,
-      tokenUsage: row.token_usage,
+      error: row.error ?? undefined,
+      tokenUsage: row.token_usage ?? undefined,
     };
   }
 }
