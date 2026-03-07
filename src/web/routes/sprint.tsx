@@ -27,12 +27,12 @@ export function sprintRoute(ctx: SprintContext): Hono {
         <div class="grid grid-cols-4 gap-4">
           {columns.map((col) => (
             <div>
-              <h3 class="font-semibold mb-3 text-gray-400">{col.name} ({col.items.length})</h3>
+              <h3 class="font-semibold mb-3 text-gray-500 dark:text-gray-400">{col.name} ({col.items.length})</h3>
               <div class="space-y-2">
                 {col.items.map((item) => (
-                  <div class="bg-gray-800 rounded p-3 text-sm">
+                  <div class="bg-gray-100 dark:bg-gray-800 rounded p-3 text-sm">
                     <div class="font-medium">{item.title}</div>
-                    <div class="text-gray-500 text-xs mt-1">{item.key}</div>
+                    <div class="text-gray-400 dark:text-gray-500 text-xs mt-1">{item.key}</div>
                   </div>
                 ))}
               </div>
