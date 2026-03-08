@@ -582,10 +582,12 @@ export class Orchestrator {
 
     this.sseHub.broadcast("agent:started", { runId, issueKey: prRunKey, provider: entry.provider });
 
+    const workDir = this.deps.workspace?.ensure(prRunKey);
+
     const { submitReview, getVerdict } = createReviewTools();
     this.reviewVerdicts.set(prRunKey, getVerdict);
 
-    this.executeReviewAgentRun(runId, prRunKey, pr, prompt, abortController, submitReview).catch((err) => {
+    this.executeReviewAgentRun(runId, prRunKey, pr, prompt, abortController, submitReview, workDir).catch((err) => {
       this.logger.error({ err, runId, prKey: pr.key }, "unhandled review agent error");
     });
   }
@@ -597,6 +599,7 @@ export class Orchestrator {
     prompt: string,
     abortController: AbortController,
     submitReview: ReturnType<typeof createReviewTools>["submitReview"],
+    workDir?: string,
   ): Promise<void> {
     const stallDetector = createStallDetector(this.config.agent.stallTimeout, () => {
       this.logger.warn({ runId, prRunKey }, "review agent stalled, aborting");
@@ -611,6 +614,7 @@ export class Orchestrator {
           tools: [submitReview],
         } as any,
         agents: this.agentMap as any,
+        workDir,
         signal: abortController.signal,
       };
 
