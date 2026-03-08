@@ -4,7 +4,8 @@ loadDotenv({ path: ".env.local" });
 loadDotenv({ path: ".env" });
 
 import { Command } from "commander";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, watchFile, unwatchFile } from "node:fs";
+import { ConfigWatcher } from "./config/watcher.js";
 import { loadConfigFromString } from "./config/loader.js";
 import { DEFAULT_CONFIG_PATH } from "./config/defaults.js";
 import { createDatabase } from "./db/index.js";
@@ -66,6 +67,19 @@ program
 
     const orchestrator = new Orchestrator(config, github, {
       config, github, runsRepo, eventsRepo, metricsRepo, workspace, logger,
+    });
+
+    const configWatcher = new ConfigWatcher((newConfig) => {
+      orchestrator.reloadConfig(newConfig);
+    }, logger);
+
+    watchFile(opts.config, { interval: 5000 }, () => {
+      try {
+        const newYaml = readFileSync(opts.config, "utf-8");
+        configWatcher.handleFileChange(newYaml);
+      } catch (err) {
+        logger.error({ err }, "failed to read config file on change");
+      }
     });
 
     if (opts.dryRun) {
@@ -234,6 +248,7 @@ program
 
     const shutdown = () => {
       logger.info("Shutting down...");
+      unwatchFile(opts.config);
       orchestrator.stop();
       db.close();
       process.exit(0);

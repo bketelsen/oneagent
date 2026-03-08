@@ -89,6 +89,17 @@ describe("Orchestrator", () => {
     expect(orch).toBeDefined();
   });
 
+  it("reloadConfig updates config and logs", () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+    const orch = new Orchestrator(mockConfig as any, mockGitHub as any, { config: mockConfig, github: mockGitHub, logger: mockLogger } as any);
+
+    const newConfig = { ...mockConfig, concurrency: { max: 10 } };
+    orch.reloadConfig(newConfig as any);
+
+    expect(mockLogger.info).toHaveBeenCalledWith("config reloaded, will take effect on next tick");
+  });
+
   it("tick fetches issues from all repos", async () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();

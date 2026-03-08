@@ -67,6 +67,11 @@ export class Orchestrator {
     this.prMonitor = new PRMonitor(config, github, this.logger);
   }
 
+  reloadConfig(newConfig: Config): void {
+    this.config = newConfig;
+    this.logger.info("config reloaded, will take effect on next tick");
+  }
+
   start(): void {
     this.logger.info({
       pollInterval: this.config.poll.interval,
