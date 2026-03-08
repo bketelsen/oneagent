@@ -1,17 +1,22 @@
 import { defineTool } from "one-agent-sdk";
 import { z } from "zod";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-function detectTestCommand(cwd: string): string {
+export interface TestCommand {
+  cmd: string;
+  args: string[];
+}
+
+export function detectTestCommand(cwd: string): TestCommand {
   // Check package.json for a test script
   const pkgPath = join(cwd, "package.json");
   if (existsSync(pkgPath)) {
     try {
       const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
       if (pkg.scripts?.test) {
-        return "npm test";
+        return { cmd: "npm", args: ["test"] };
       }
     } catch {
       // ignore parse errors
@@ -24,7 +29,7 @@ function detectTestCommand(cwd: string): string {
     try {
       const makefile = readFileSync(makefilePath, "utf-8");
       if (/^test:/m.test(makefile)) {
-        return "make test";
+        return { cmd: "make", args: ["test"] };
       }
     } catch {
       // ignore read errors
@@ -32,7 +37,7 @@ function detectTestCommand(cwd: string): string {
   }
 
   // Default
-  return "npm test";
+  return { cmd: "npm", args: ["test"] };
 }
 
 export const runTestsTool = defineTool({
@@ -43,9 +48,9 @@ export const runTestsTool = defineTool({
     cwd: z.string().describe("Working directory for the project"),
   }),
   handler: async ({ cwd }) => {
-    const cmd = detectTestCommand(cwd);
+    const { cmd, args } = detectTestCommand(cwd);
     try {
-      const output = execSync(cmd, {
+      const output = execFileSync(cmd, args, {
         cwd,
         encoding: "utf-8",
         timeout: 120_000,
@@ -71,12 +76,11 @@ export const runTestsFilteredTool = defineTool({
     pattern: z.string().optional().describe("Test name pattern to match"),
   }),
   handler: async ({ cwd, file, pattern }) => {
-    const args = ["npx", "vitest", "run"];
+    const args = ["vitest", "run"];
     if (file) args.push(file);
     if (pattern) args.push("-t", pattern);
-    const cmd = args.join(" ");
     try {
-      const output = execSync(cmd, {
+      const output = execFileSync("npx", args, {
         cwd,
         encoding: "utf-8",
         timeout: 120_000,
@@ -92,5 +96,3 @@ export const runTestsFilteredTool = defineTool({
     }
   },
 });
-
-export { detectTestCommand };
