@@ -163,4 +163,103 @@ describe("Dispatcher", () => {
     expect(prompt).toContain("APPROVE");
     expect(prompt).toContain("REQUEST_CHANGES");
   });
+
+  it("appends repo context to issue prompt when set", () => {
+    const dispatcher = new Dispatcher();
+    dispatcher.setRepoContext("Always run tests before committing.\n\n## Skills\n\n- Use vitest for testing");
+    const prompt = dispatcher.buildPrompt({
+      key: "o/r#1",
+      owner: "o",
+      repo: "r",
+      number: 1,
+      title: "Fix the bug",
+      body: "The button is broken",
+      labels: ["oneagent"],
+      state: "open",
+      hasOpenPR: false,
+    });
+    expect(prompt).toContain("## Repository Context");
+    expect(prompt).toContain("Always run tests before committing.");
+    expect(prompt).toContain("Use vitest for testing");
+  });
+
+  it("appends repo context to PR fix prompt when set", () => {
+    const dispatcher = new Dispatcher();
+    dispatcher.setRepoContext("Follow conventional commits for all messages.");
+    const prompt = dispatcher.buildPRFixPrompt(
+      {
+        key: "o/r#10",
+        owner: "o",
+        repo: "r",
+        number: 10,
+        title: "Add feature",
+        body: "",
+        headRef: "feature-branch",
+        state: "open",
+        labels: ["oneagent"],
+      },
+      "Error: test failed on line 42",
+    );
+    expect(prompt).toContain("## Repository Context");
+    expect(prompt).toContain("Follow conventional commits for all messages.");
+  });
+
+  it("appends repo context to PR review feedback prompt when set", () => {
+    const dispatcher = new Dispatcher();
+    dispatcher.setRepoContext("Ensure all functions have JSDoc comments.");
+    const prompt = dispatcher.buildPRReviewPrompt(
+      {
+        key: "o/r#10",
+        owner: "o",
+        repo: "r",
+        number: 10,
+        title: "Add feature",
+        body: "",
+        headRef: "feature-branch",
+        state: "open",
+        labels: ["oneagent"],
+      },
+      [{ id: 1, body: "Fix naming", path: "src/index.ts", user: "reviewer", createdAt: "2026-01-01", pullRequestReviewId: 1 }],
+      "+added line\n-removed line",
+    );
+    expect(prompt).toContain("## Repository Context");
+    expect(prompt).toContain("Ensure all functions have JSDoc comments.");
+  });
+
+  it("appends repo context to review dispatch prompt when set", () => {
+    const dispatcher = new Dispatcher();
+    dispatcher.setRepoContext("Check for security vulnerabilities in dependencies.");
+    const prompt = dispatcher.buildReviewDispatchPrompt(
+      {
+        key: "o/r#10",
+        owner: "o",
+        repo: "r",
+        number: 10,
+        title: "Add feature",
+        body: "",
+        headRef: "feature-branch",
+        state: "open",
+        labels: ["oneagent"],
+      },
+      "+added line\n-removed line",
+    );
+    expect(prompt).toContain("## Repository Context");
+    expect(prompt).toContain("Check for security vulnerabilities in dependencies.");
+  });
+
+  it("does not append context section when no repo context set", () => {
+    const dispatcher = new Dispatcher();
+    const prompt = dispatcher.buildPrompt({
+      key: "o/r#1",
+      owner: "o",
+      repo: "r",
+      number: 1,
+      title: "Fix the bug",
+      body: "The button is broken",
+      labels: ["oneagent"],
+      state: "open",
+      hasOpenPR: false,
+    });
+    expect(prompt).not.toContain("Repository Context");
+  });
 });

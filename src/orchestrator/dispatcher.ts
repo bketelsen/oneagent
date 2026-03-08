@@ -1,9 +1,20 @@
 import type { Issue, PullRequest, ReviewComment } from "../github/types.js";
 
 export class Dispatcher {
+  private repoContext?: string;
+
+  setRepoContext(context: string): void {
+    this.repoContext = context;
+  }
+
+  private appendRepoContext(prompt: string): string {
+    if (!this.repoContext) return prompt;
+    return `${prompt}\n\n## Repository Context\n\nThe following project instructions and skills MUST be followed:\n\n${this.repoContext}`;
+  }
+
   buildPrompt(issue: Issue, workDir?: string): string {
     const workDirLine = workDir ? `\n**Workspace:** ${workDir}` : "";
-    return `## GitHub Issue: ${issue.key}
+    const prompt = `## GitHub Issue: ${issue.key}
 
 **Title:** ${issue.title}
 
@@ -15,10 +26,11 @@ ${issue.body}
 **Labels:** ${issue.labels.join(", ")}${workDirLine}
 
 Work on this issue. Read the codebase, understand the requirements, implement the solution, write tests, and prepare for a pull request.`;
+    return this.appendRepoContext(prompt);
   }
 
   buildPRFixPrompt(pr: PullRequest, failureLogs: string): string {
-    return `## CI Failure Fix: ${pr.key}
+    const prompt = `## CI Failure Fix: ${pr.key}
 
 **PR Title:** ${pr.title}
 **Branch:** ${pr.headRef}
@@ -30,6 +42,7 @@ ${failureLogs}
 \`\`\`
 
 Analyze the CI failure, fix the issue on branch \`${pr.headRef}\`, and push the fix.`;
+    return this.appendRepoContext(prompt);
   }
 
   buildPRReviewPrompt(pr: PullRequest, comments: ReviewComment[], diff: string, workDir?: string): string {
@@ -38,7 +51,7 @@ Analyze the CI failure, fix the issue on branch \`${pr.headRef}\`, and push the 
       .map((c) => `- **${c.user}** on \`${c.path}\`:\n  ${c.body}`)
       .join("\n\n");
 
-    return `## PR Review Feedback: ${pr.key}
+    const prompt = `## PR Review Feedback: ${pr.key}
 
 **PR Title:** ${pr.title}
 **Branch:** ${pr.headRef}
@@ -53,10 +66,11 @@ ${diff}
 \`\`\`
 
 Address the review feedback above. Make the requested changes on branch \`${pr.headRef}\` and push the fixes. Do NOT create a new PR — push to the existing branch.`;
+    return this.appendRepoContext(prompt);
   }
 
   buildReviewDispatchPrompt(pr: PullRequest, diff: string): string {
-    return `## PR Review: ${pr.key}
+    const prompt = `## PR Review: ${pr.key}
 
 **PR Title:** ${pr.title}
 **Branch:** ${pr.headRef}
@@ -73,5 +87,6 @@ Review this pull request. After your review:
 - If changes are needed: submit a REQUEST_CHANGES review with specific inline comments
 
 Use the GitHub API to submit your review on PR #${pr.number} in ${pr.owner}/${pr.repo}.`;
+    return this.appendRepoContext(prompt);
   }
 }
