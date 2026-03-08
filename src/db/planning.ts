@@ -102,4 +102,8 @@ export class PlanningRepo {
     const row = this.db.prepare("SELECT repo_context FROM planning_sessions WHERE id = ?").get(id) as any;
     return row?.repo_context ?? null;
   }
+
+  delete(id: string): void {
+    this.db.prepare("DELETE FROM planning_sessions WHERE id = ?").run(id);
+  }
 }

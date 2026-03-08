@@ -55,6 +55,18 @@ describe("PlanningRepo", () => {
     expect(sessions[0].repo).toBe("owner/repo");
   });
 
+  it("deletes a session", () => {
+    repo.save("s-del", [{ role: "user", content: "hello" }]);
+    expect(repo.list()).toHaveLength(1);
+    repo.delete("s-del");
+    expect(repo.list()).toHaveLength(0);
+    expect(repo.load("s-del")).toEqual([]);
+  });
+
+  it("delete is a no-op for nonexistent session", () => {
+    expect(() => repo.delete("nonexistent")).not.toThrow();
+  });
+
   describe("plan storage", () => {
     it("saves and loads a plan", () => {
       const plan = {
