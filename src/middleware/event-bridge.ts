@@ -1,4 +1,4 @@
-import type { EventEmitter } from "node:events";
+import type { SSEHub } from "../web/sse.js";
 import type { RunEventsRepo } from "../db/run-events.js";
 
 export interface StreamChunkLike {
@@ -9,10 +9,10 @@ export interface StreamChunkLike {
 export function bridgeChunkToSSE(
   chunk: StreamChunkLike,
   runId: string,
-  sseHub: EventEmitter,
+  sseHub: SSEHub,
   eventsRepo?: RunEventsRepo,
 ): void {
   const eventType = `agent:${chunk.type}`;
-  sseHub.emit("sse", { type: eventType, data: { runId, ...chunk } });
+  sseHub.broadcast(eventType, { runId, ...chunk });
   eventsRepo?.insert(runId, chunk.type, chunk as Record<string, unknown>);
 }
