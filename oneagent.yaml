@@ -7,14 +7,21 @@ github:
 
 agent:
   provider: claude-code
+  model: claude-opus-4-6
   stallTimeout: 300000
   maxRetries: 1
 
 concurrency:
-  max: 1
+  max: 5
 
 poll:
   interval: 30000
+
+prReview:
+  enabled: true
+  autoMerge: true
+  provider: claude-code
+  model: claude-sonnet-4-6
 
 web:
   port: 3000
