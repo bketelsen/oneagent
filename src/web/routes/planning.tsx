@@ -260,5 +260,11 @@ export function planningRoute(ctx: PlanningContext): Hono {
     return c.json({ plan });
   });
 
+  route.post("/:id/delete", (c) => {
+    const id = c.req.param("id");
+    ctx.planningRepo.delete(id);
+    return c.redirect("/planning");
+  });
+
   return route;
 }
