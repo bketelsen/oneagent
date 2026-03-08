@@ -24,6 +24,12 @@ export function sprintRoute(ctx: SprintContext): Hono {
 
     return c.html(
       <Layout title="Sprint Board">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Sprint Board</h2>
+          <a href="/sprint" class="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+            Refresh
+          </a>
+        </div>
         <div class="grid grid-cols-4 gap-4">
           {columns.map((col) => (
             <div>
