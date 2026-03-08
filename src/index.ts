@@ -107,7 +107,41 @@ program
       const app = createApp({
         app: appCtx,
         sprint: {
-          getBoard: async () => ({ todo: [], inProgress: [], inReview: [], done: [] }),
+          getBoard: async () => {
+            const todo: Array<{ key: string; title: string }> = [];
+            const inProgress: Array<{ key: string; title: string }> = [];
+            const inReview: Array<{ key: string; title: string }> = [];
+            const done: Array<{ key: string; title: string }> = [];
+
+            const since = new Date();
+            since.setDate(since.getDate() - 30);
+
+            for (const repo of config.github.repos) {
+              const [openIssues, closedIssues] = await Promise.all([
+                github.fetchIssues(repo.owner, repo.repo, config.labels.eligible),
+                github.fetchClosedIssues(repo.owner, repo.repo, since),
+              ]);
+
+              for (const issue of openIssues) {
+                if (orchestrator.state.isRunning(issue.key)) {
+                  inProgress.push({ key: issue.key, title: issue.title });
+                } else if (issue.hasOpenPR) {
+                  inReview.push({ key: issue.key, title: issue.title });
+                } else {
+                  todo.push({ key: issue.key, title: issue.title });
+                }
+              }
+
+              for (const issue of closedIssues) {
+                const runs = runsRepo.listByIssue(issue.key);
+                if (runs.some((r) => r.status === "completed")) {
+                  done.push({ key: issue.key, title: issue.title });
+                }
+              }
+            }
+
+            return { todo, inProgress, inReview, done };
+          },
         },
         issues: {
           getRunEvents: (issueKey) => {
