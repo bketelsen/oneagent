@@ -41,7 +41,7 @@ OneAgent is an AI agent orchestrator that polls GitHub issues for a configurable
 - `better-sqlite3` for persistence
 - Zod v4 for config validation
 - Pino for structured logging (`pino-pretty` in dev)
-- Vitest for testing (no config file — uses defaults)
+- Vitest for testing (`vitest.config.ts` excludes `workspaces/`, `node_modules/`, `dist/`)
 
 ## Config
 
