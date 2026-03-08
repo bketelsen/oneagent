@@ -17,6 +17,7 @@ import { PRMonitor, type ReviewFeedbackResult } from "./pr-monitor.js";
 import { buildAgentGraph, type AgentDef } from "../agents/graph.js";
 import { coderAgent } from "../agents/coder.js";
 import { prReviewerAgent } from "../agents/skills/pr-reviewer.js";
+import { createReviewTools, type ReviewVerdict } from "../tools/review.js";
 import { createStallDetector } from "../middleware/stall-detector.js";
 import { logHandoff } from "../middleware/logging.js";
 import { WorkspaceManager } from "../workspace/manager.js";
@@ -47,6 +48,7 @@ export class Orchestrator {
   private reviewTimer?: ReturnType<typeof setInterval>;
   private logger: Logger;
   readonly reviewCycles = new ReviewCycleState();
+  private reviewVerdicts = new Map<string, () => ReviewVerdict | null>();
 
   constructor(
     private config: Config,
@@ -595,7 +597,10 @@ export class Orchestrator {
       data: { runId, issueKey: prRunKey, provider: entry.provider },
     });
 
-    this.executeReviewAgentRun(runId, prRunKey, pr, prompt, abortController).catch((err) => {
+    const { submitReview, getVerdict } = createReviewTools();
+    this.reviewVerdicts.set(prRunKey, getVerdict);
+
+    this.executeReviewAgentRun(runId, prRunKey, pr, prompt, abortController, submitReview).catch((err) => {
       this.logger.error({ err, runId, prKey: pr.key }, "unhandled review agent error");
     });
   }
@@ -606,6 +611,7 @@ export class Orchestrator {
     pr: PullRequest,
     prompt: string,
     abortController: AbortController,
+    submitReview: ReturnType<typeof createReviewTools>["submitReview"],
   ): Promise<void> {
     const stallDetector = createStallDetector(this.config.agent.stallTimeout, () => {
       this.logger.warn({ runId, prRunKey }, "review agent stalled, aborting");
@@ -615,7 +621,10 @@ export class Orchestrator {
     try {
       const runConfig: RunConfig = {
         provider: this.config.prReview.provider as any,
-        agent: prReviewerAgent as any,
+        agent: {
+          ...prReviewerAgent,
+          tools: [submitReview],
+        } as any,
         agents: this.agentMap as any,
         signal: abortController.signal,
       };
@@ -698,19 +707,36 @@ export class Orchestrator {
   }
 
   private async onReviewComplete(pr: PullRequest): Promise<void> {
+    const prRunKey = `pr-agent-review:${pr.key}`;
     await this.github.removeLabel(pr.owner, pr.repo, pr.number, this.config.labels.needsReview);
 
-    const reviews = await this.github.fetchPRReviews(pr.owner, pr.repo, pr.number);
-    const latestReview = reviews[0];
+    const getVerdict = this.reviewVerdicts.get(prRunKey);
+    const verdict = getVerdict?.() ?? null;
+    this.reviewVerdicts.delete(prRunKey);
 
-    if (!latestReview || latestReview.state === "APPROVED") {
+    if (!verdict || verdict.verdict === "approve") {
       this.logger.info({ prKey: pr.key }, "PR approved by review agent");
       this.reviewCycles.reset(pr.key);
+
+      // Post approving comment
+      if (verdict) {
+        await this.github.addComment(pr.owner, pr.repo, pr.number, verdict.summary);
+      }
 
       if (this.config.prReview.autoMerge) {
         await this.tryAutoMerge(pr);
       }
-    } else if (latestReview.state === "CHANGES_REQUESTED") {
+    } else if (verdict.verdict === "request_changes") {
+      // Submit as COMMENT review (not REQUEST_CHANGES) with inline comments
+      await this.github.submitPRReview(
+        pr.owner,
+        pr.repo,
+        pr.number,
+        "COMMENT",
+        verdict.summary,
+        verdict.comments,
+      );
+
       this.reviewCycles.increment(pr.key);
       const cycleCount = this.reviewCycles.getCycleCount(pr.key);
 

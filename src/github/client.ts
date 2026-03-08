@@ -277,7 +277,7 @@ export class GitHubClient {
     owner: string,
     repo: string,
     prNumber: number,
-    event: "APPROVE" | "REQUEST_CHANGES",
+    event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
     body: string,
     comments?: Array<{ path: string; line: number; body: string }>,
   ): Promise<void> {
