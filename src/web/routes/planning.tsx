@@ -135,24 +135,32 @@ export function planningRoute(ctx: PlanningContext): Hono {
         </div>
         <div class="space-y-2">
           {sessions.map((s: PlanningSessionRow) => (
-            <a href={`/planning/${s.id}`} class="block bg-gray-100 dark:bg-gray-800 rounded p-4 hover:bg-gray-200 dark:hover:bg-gray-700">
-              <div class="flex justify-between items-center">
-                <div class="font-medium">{s.id.slice(0, 8)}...</div>
-                <div class="flex gap-2 items-center">
-                  {s.repo && (
-                    <span class="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">{s.repo}</span>
-                  )}
-                  {s.status && (
-                    <span class={`text-xs px-2 py-0.5 rounded ${
-                      s.status === "published" ? "bg-green-900 text-green-300" :
-                      s.status === "approved" ? "bg-blue-900 text-blue-300" :
-                      "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
-                    }`}>{s.status}</span>
-                  )}
+            <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700">
+              <a href={`/planning/${s.id}`} class="flex-1 p-4">
+                <div class="flex justify-between items-center">
+                  <div class="font-medium">{s.id.slice(0, 8)}...</div>
+                  <div class="flex gap-2 items-center">
+                    {s.repo && (
+                      <span class="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">{s.repo}</span>
+                    )}
+                    {s.status && (
+                      <span class={`text-xs px-2 py-0.5 rounded ${
+                        s.status === "published" ? "bg-green-900 text-green-300" :
+                        s.status === "approved" ? "bg-blue-900 text-blue-300" :
+                        "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                      }`}>{s.status}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div class="text-gray-400 dark:text-gray-500 text-sm">{s.issueKey ?? "No issue"} — {s.updatedAt}</div>
-            </a>
+                <div class="text-gray-400 dark:text-gray-500 text-sm">{s.issueKey ?? "No issue"} — {s.updatedAt}</div>
+              </a>
+              <form method="post" action={`/planning/${s.id}/delete`} class="pr-4"
+                onsubmit={`return confirm('Are you sure you want to ${s.status === "published" ? "archive" : "delete"} this planning session? This cannot be undone.')`}>
+                <button type="submit" class="text-xs px-2 py-1 rounded bg-red-900 text-red-300 hover:bg-red-800">
+                  {s.status === "published" ? "Archive" : "Delete"}
+                </button>
+              </form>
+            </div>
           ))}
         </div>
       </Layout>
