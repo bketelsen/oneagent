@@ -19,7 +19,7 @@ OneAgent is an AI agent orchestrator that polls GitHub issues for a configurable
 
 **Core loop (Orchestrator):** Poll GitHub -> Dispatch agent runs -> Reconcile stale runs. The `Orchestrator` class in `src/orchestrator/orchestrator.ts` owns this cycle, using `RunState` for in-memory tracking and `RetryQueue` for exponential backoff retries.
 
-**Agent graph:** Multi-agent system defined in `src/agents/graph.ts`. The `coder` agent is the entry point and can hand off to specialist agents (`tdd`, `debugger`, `reviewer`, `pr-workflow`, `planner`). The `pr-reviewer` agent operates independently (no handoffs) with its own model/provider. Agents are `AgentDef` objects with name, prompt, and handoff declarations, executed via `one-agent-sdk`'s `run()`. The `planner` agent uses a structured superpowers-style prompt (one question at a time, propose approaches, build detailed plans) with three tools: `create_plan`, `refine_plan`, `publish_plan`. Plans are persisted in SQLite and can be published as GitHub issues with dependency graphs. The `createPlannerAgent()` factory accepts tools for the web planning UI.
+**Agent graph:** Multi-agent system defined in `src/agents/graph.ts`. The `coder` agent is the entry point and can hand off to specialist agents (`tdd`, `debugger`, `reviewer`, `pr-workflow`, `planner`). The `pr-reviewer` agent operates independently (no handoffs) with its own model/provider. Agents are `AgentDef` objects with name, prompt, and handoff declarations, executed via `one-agent-sdk`'s `run()`. The `planner` agent uses a structured superpowers-style prompt (one question at a time, propose approaches, build detailed plans) with three tools: `create_plan`, `refine_plan`, `publish_plan`. Plans are persisted in SQLite and can be published as GitHub issues with dependency graphs. The `createPlannerAgent()` factory accepts tools for the web planning UI. The `pr-reviewer` agent uses a `submit_review` tool (created via `createReviewTools()` factory in `src/tools/review.ts`) to return structured verdicts to the orchestrator. On approval, the orchestrator posts a PR comment and optionally merges. On request-changes, it submits a `COMMENT` review with inline feedback (not a blocking `REQUEST_CHANGES` review, since the agent runs as the same user that opened the PR).
 
 **Key modules:**
 
@@ -29,6 +29,7 @@ OneAgent is an AI agent orchestrator that polls GitHub issues for a configurable
 - `src/web/` — Hono app with JSX routes (using `hono/jsx`). Dashboard, sprint board, planning, settings pages. SSE via `SSEHub`.
 - `src/workspace/` — `WorkspaceManager` creates isolated working directories per issue with optional setup/teardown hooks.
 - `src/tools/planning.ts` — Factory function `createPlanningTools()` returns `create_plan`, `refine_plan`, `publish_plan` tools that persist plans to PlanningRepo and publish as GitHub issues via `gh` CLI.
+- `src/tools/review.ts` — Factory function `createReviewTools()` returns `submit_review` tool and `getVerdict()` accessor. The tool captures structured review verdicts in a closure; the orchestrator reads the verdict after the agent run completes.
 - `src/middleware/` — Stall detector (aborts stuck agents), event bridge, request logger.
 
 **Entry point:** `src/index.ts` — CLI via Commander with `start`, `init`, `setup` subcommands. Loads `.env.local` then `.env` via dotenv.
