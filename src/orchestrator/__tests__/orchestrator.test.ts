@@ -9,6 +9,20 @@ vi.mock("one-agent-sdk", async (importOriginal) => {
   };
 });
 
+let mockReviewVerdict: any = null;
+
+vi.mock("../../tools/review.js", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    createReviewTools: () => {
+      const submitReview = { name: "submit_review" };
+      const getVerdict = () => mockReviewVerdict;
+      return { submitReview, getVerdict };
+    },
+  };
+});
+
 import { run as mockRunFn } from "one-agent-sdk";
 
 function makeMockGitHub() {
@@ -22,11 +36,15 @@ function makeMockGitHub() {
     fetchPRReviewComments: vi.fn().mockResolvedValue([]),
     fetchPRsWithReviewFeedback: vi.fn().mockResolvedValue([]),
     fetchPRDiff: vi.fn().mockResolvedValue(""),
+    fetchPRReviews: vi.fn().mockResolvedValue([]),
     fetchCheckRuns: vi.fn().mockResolvedValue([]),
     fetchOpenPRs: vi.fn().mockResolvedValue([]),
     fetchPRMergeableStatus: vi.fn().mockResolvedValue({ mergeable: true, mergeableState: "clean" }),
     parseDependencies: vi.fn().mockReturnValue([]),
     isIssueClosed: vi.fn().mockResolvedValue(true),
+    submitPRReview: vi.fn().mockResolvedValue(undefined),
+    mergePR: vi.fn().mockResolvedValue(undefined),
+    allChecksPassed: vi.fn().mockResolvedValue(true),
     issueKey: (o: string, r: string, n: number) => `${o}/${r}#${n}`,
     parseIssueKey: (key: string) => {
       const match = key.match(/^(.+)\/(.+)#(\d+)$/);
@@ -61,6 +79,7 @@ const mockConfig = {
 describe("Orchestrator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockReviewVerdict = null;
   });
 
   it("can be constructed", () => {
@@ -530,5 +549,131 @@ describe("Orchestrator", () => {
     expect(mockGitHub.parseDependencies).toHaveBeenCalledWith("No dependencies here");
     expect(mockGitHub.isIssueClosed).not.toHaveBeenCalled();
     expect(mockGitHub.addLabel).toHaveBeenCalled(); // dispatch was called
+  });
+
+  it("onReviewComplete posts comment and auto-merges on approve verdict", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const autoMergeConfig = {
+      ...mockConfig,
+      prReview: { enabled: true, pollInterval: 60000, autoMerge: true, requireChecks: true, maxReviewCycles: 2 },
+      labels: { ...mockConfig.labels, needsReview: "oneagent-needs-review", needsHuman: "oneagent-needs-human" },
+    };
+
+    // Mock a PR with needs-review label
+    const pr = { key: "o/r#50", owner: "o", repo: "r", number: 50, title: "Test PR", headRef: "feature-branch" };
+    mockGitHub.fetchPRsWithLabel.mockResolvedValue([pr]);
+    mockGitHub.fetchPRDiff.mockResolvedValue("diff content");
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 100, outputTokens: 50 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      autoMergeConfig as any,
+      mockGitHub as any,
+      { config: autoMergeConfig, github: mockGitHub, logger: mockLogger } as any,
+    );
+
+    // Set the mock verdict that createReviewTools will return
+    mockReviewVerdict = {
+      verdict: "approve",
+      summary: "LGTM, clean implementation",
+    };
+
+    await orch.tickReviewDispatch();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Should post the summary as a comment
+    expect(mockGitHub.addComment).toHaveBeenCalledWith("o", "r", 50, "LGTM, clean implementation");
+    // Should attempt auto-merge (checks pass)
+    expect(mockGitHub.allChecksPassed).toHaveBeenCalled();
+    expect(mockGitHub.mergePR).toHaveBeenCalledWith("o", "r", 50);
+  });
+
+  it("onReviewComplete submits COMMENT review on request_changes verdict", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const reviewConfig = {
+      ...mockConfig,
+      prReview: { enabled: true, pollInterval: 60000, autoMerge: false, maxReviewCycles: 2 },
+      labels: { ...mockConfig.labels, needsReview: "oneagent-needs-review", needsHuman: "oneagent-needs-human" },
+    };
+
+    const pr = { key: "o/r#51", owner: "o", repo: "r", number: 51, title: "Test PR 2", headRef: "feature-2" };
+    mockGitHub.fetchPRsWithLabel.mockResolvedValue([pr]);
+    mockGitHub.fetchPRDiff.mockResolvedValue("diff content");
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 100, outputTokens: 50 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      reviewConfig as any,
+      mockGitHub as any,
+      { config: reviewConfig, github: mockGitHub, logger: mockLogger } as any,
+    );
+
+    // Set the mock verdict that createReviewTools will return
+    mockReviewVerdict = {
+      verdict: "request_changes",
+      summary: "Found issues",
+      comments: [{ path: "src/foo.ts", line: 10, body: "Missing null check" }],
+    };
+
+    await orch.tickReviewDispatch();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Should submit a COMMENT review (not REQUEST_CHANGES)
+    expect(mockGitHub.submitPRReview).toHaveBeenCalledWith(
+      "o", "r", 51,
+      "COMMENT",
+      "Found issues",
+      [{ path: "src/foo.ts", line: 10, body: "Missing null check" }],
+    );
+    // Should NOT auto-merge
+    expect(mockGitHub.mergePR).not.toHaveBeenCalled();
+  });
+
+  it("onReviewComplete treats null verdict as approve without comment", async () => {
+    const mockGitHub = makeMockGitHub();
+    const mockLogger = makeMockLogger();
+
+    const reviewConfig = {
+      ...mockConfig,
+      prReview: { enabled: true, pollInterval: 60000, autoMerge: false, maxReviewCycles: 2 },
+      labels: { ...mockConfig.labels, needsReview: "oneagent-needs-review", needsHuman: "oneagent-needs-human" },
+    };
+
+    const pr = { key: "o/r#52", owner: "o", repo: "r", number: 52, title: "Test PR 3", headRef: "feature-3" };
+    mockGitHub.fetchPRsWithLabel.mockResolvedValue([pr]);
+    mockGitHub.fetchPRDiff.mockResolvedValue("diff content");
+
+    const mockStream = (async function* () {
+      yield { type: "done", usage: { inputTokens: 100, outputTokens: 50 } };
+    })();
+    (mockRunFn as any).mockResolvedValue({ stream: mockStream });
+
+    const orch = new Orchestrator(
+      reviewConfig as any,
+      mockGitHub as any,
+      { config: reviewConfig, github: mockGitHub, logger: mockLogger } as any,
+    );
+
+    // Don't set a verdict — simulates agent not calling submit_review
+    mockReviewVerdict = null;
+    await orch.tickReviewDispatch();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Should NOT post a comment (no verdict summary)
+    expect(mockGitHub.addComment).not.toHaveBeenCalled();
+    // Should NOT submit PR review
+    expect(mockGitHub.submitPRReview).not.toHaveBeenCalled();
+    // Should NOT auto-merge (autoMerge is false)
+    expect(mockGitHub.mergePR).not.toHaveBeenCalled();
   });
 });

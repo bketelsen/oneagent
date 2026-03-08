@@ -692,6 +692,7 @@ export class Orchestrator {
     } catch (err) {
       stallDetector.stop();
       this.state.remove(prRunKey);
+      this.reviewVerdicts.delete(prRunKey);
 
       const errorMsg = err instanceof Error ? err.message : String(err);
       this.deps.runsRepo?.completeRun(runId, "failed", new Date().toISOString(), 0, errorMsg);
