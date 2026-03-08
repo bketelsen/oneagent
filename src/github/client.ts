@@ -72,6 +72,25 @@ export class GitHubClient {
       }));
   }
 
+  async fetchClosedIssues(owner: string, repo: string, since: Date): Promise<Issue[]> {
+    const { data } = await this.octokit.rest.issues.listForRepo({
+      owner, repo, state: "closed", since: since.toISOString(), per_page: 100,
+    });
+    this.logger.debug({ owner, repo, since: since.toISOString(), count: data.length }, "fetched closed issues");
+    return data
+      .filter((i) => !i.pull_request)
+      .map((i) => ({
+        key: this.issueKey(owner, repo, i.number),
+        owner, repo,
+        number: i.number,
+        title: i.title,
+        body: i.body ?? "",
+        labels: i.labels.map((l) => (typeof l === "string" ? l : l.name ?? "")),
+        state: i.state,
+        hasOpenPR: false,
+      }));
+  }
+
   async addLabel(owner: string, repo: string, number: number, label: string): Promise<void> {
     await this.octokit.rest.issues.addLabels({ owner, repo, issue_number: number, labels: [label] });
     this.logger.debug({ owner, repo, number, label }, "added label");

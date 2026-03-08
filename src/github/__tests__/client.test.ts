@@ -618,6 +618,62 @@ describe("fetchPRReviews", () => {
   });
 });
 
+describe("fetchClosedIssues", () => {
+  it("fetches closed issues since a given date", async () => {
+    const client = new GitHubClient("fake-token");
+    // The method should exist and accept owner, repo, since
+    expect(typeof client.fetchClosedIssues).toBe("function");
+  });
+
+  it("returns mapped closed issues filtering out PRs", async () => {
+    const client = new GitHubClient("fake-token");
+    const since = new Date("2026-01-01T00:00:00Z");
+    const listForRepo = vi.fn().mockResolvedValue({
+      data: [
+        { number: 10, title: "Closed issue", body: "done", state: "closed", labels: [{ name: "bug" }] },
+        { number: 11, title: "Closed PR", body: "merged", state: "closed", labels: [], pull_request: { url: "..." } },
+      ],
+    });
+    (client as any).octokit = {
+      rest: {
+        issues: { listForRepo },
+      },
+    };
+
+    const issues = await client.fetchClosedIssues("owner", "repo", since);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toEqual({
+      key: "owner/repo#10",
+      owner: "owner",
+      repo: "repo",
+      number: 10,
+      title: "Closed issue",
+      body: "done",
+      labels: ["bug"],
+      state: "closed",
+      hasOpenPR: false,
+    });
+    expect(listForRepo).toHaveBeenCalledWith({
+      owner: "owner",
+      repo: "repo",
+      state: "closed",
+      since: "2026-01-01T00:00:00.000Z",
+      per_page: 100,
+    });
+  });
+
+  it("returns empty array when no closed issues", async () => {
+    const client = new GitHubClient("fake-token");
+    (client as any).octokit = {
+      rest: {
+        issues: { listForRepo: vi.fn().mockResolvedValue({ data: [] }) },
+      },
+    };
+    const issues = await client.fetchClosedIssues("owner", "repo", new Date());
+    expect(issues).toHaveLength(0);
+  });
+});
+
 describe("allChecksPassed", () => {
   it("returns true when all checks completed successfully", async () => {
     const client = new GitHubClient("fake-token");
