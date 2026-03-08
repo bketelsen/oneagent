@@ -4,3 +4,4 @@ export { createReviewTools } from "./review.js";
 export type { ReviewVerdict } from "./review.js";
 export { discoverRepoContextTool } from "./repo-context.js";
 export { setupWorkspaceTool } from "./workspace.js";
+export { checkCIStatusTool } from "./ci.js";
