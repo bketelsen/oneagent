@@ -715,14 +715,14 @@ export class Orchestrator {
     const verdict = getVerdict?.() ?? null;
     this.reviewVerdicts.delete(prRunKey);
 
-    if (!verdict || verdict.verdict === "approve") {
+    if (!verdict) {
+      this.logger.warn({ prKey: pr.key }, "review agent did not submit a verdict, treating as implicit approval (no auto-merge)");
+      this.reviewCycles.reset(pr.key);
+    } else if (verdict.verdict === "approve") {
       this.logger.info({ prKey: pr.key }, "PR approved by review agent");
       this.reviewCycles.reset(pr.key);
 
-      // Post approving comment
-      if (verdict) {
-        await this.github.addComment(pr.owner, pr.repo, pr.number, verdict.summary);
-      }
+      await this.github.addComment(pr.owner, pr.repo, pr.number, verdict.summary);
 
       if (this.config.prReview.autoMerge) {
         await this.tryAutoMerge(pr);

@@ -639,13 +639,13 @@ describe("Orchestrator", () => {
     expect(mockGitHub.mergePR).not.toHaveBeenCalled();
   });
 
-  it("onReviewComplete treats null verdict as approve without comment", async () => {
+  it("onReviewComplete treats null verdict as implicit approval without comment or auto-merge", async () => {
     const mockGitHub = makeMockGitHub();
     const mockLogger = makeMockLogger();
 
     const reviewConfig = {
       ...mockConfig,
-      prReview: { enabled: true, pollInterval: 60000, autoMerge: false, maxReviewCycles: 2 },
+      prReview: { enabled: true, pollInterval: 60000, autoMerge: true, requireChecks: false, maxReviewCycles: 2 },
       labels: { ...mockConfig.labels, needsReview: "oneagent-needs-review", needsHuman: "oneagent-needs-human" },
     };
 
@@ -673,7 +673,7 @@ describe("Orchestrator", () => {
     expect(mockGitHub.addComment).not.toHaveBeenCalled();
     // Should NOT submit PR review
     expect(mockGitHub.submitPRReview).not.toHaveBeenCalled();
-    // Should NOT auto-merge (autoMerge is false)
+    // Should NOT auto-merge even though autoMerge is true (null verdict = no explicit approval)
     expect(mockGitHub.mergePR).not.toHaveBeenCalled();
   });
 });
