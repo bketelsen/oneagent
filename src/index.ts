@@ -16,7 +16,6 @@ import { PlanningRepo } from "./db/planning.js";
 import { GitHubClient } from "./github/client.js";
 import { Orchestrator } from "./orchestrator/orchestrator.js";
 import { WorkspaceManager } from "./workspace/manager.js";
-import { SSEHub } from "./web/sse.js";
 import { createApp } from "./web/app.js";
 import { serve } from "@hono/node-server";
 import { createLogger } from "./logger.js";
@@ -63,7 +62,8 @@ program
     const planningRepo = new PlanningRepo(db);
     const github = new GitHubClient(token, logger);
     const workspace = new WorkspaceManager(config.workspace.baseDir, logger, config.workspace.hooks);
-    const sseHub = new SSEHub();
+    const workspace = new WorkspaceManager(config.workspace.baseDir, logger);
+    const workspace = new WorkspaceManager(config.workspace.baseDir, logger);
 
     const orchestrator = new Orchestrator(config, github, {
       config, github, runsRepo, eventsRepo, metricsRepo, workspace, logger,
@@ -90,7 +90,7 @@ program
 
     if (config.web.enabled) {
       const appCtx = {
-        sseHub,
+        sseHub: orchestrator.sseHub,
         onRefresh: () => orchestrator.tick(),
         getState: () => ({
           running: [...orchestrator.state.running()].map(([, e]) => ({
