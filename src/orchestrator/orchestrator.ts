@@ -500,6 +500,8 @@ export class Orchestrator {
         });
       }
 
+      this.deps.workspace?.cleanup(issue.key);
+
       this.sseHub.emit("sse", {
         type: "agent:completed",
         data: { runId, issueKey: issue.key },

@@ -61,7 +61,7 @@ program
     const metricsRepo = new MetricsRepo(db);
     const planningRepo = new PlanningRepo(db);
     const github = new GitHubClient(token, logger);
-    const workspace = new WorkspaceManager(config.workspace.baseDir, logger);
+    const workspace = new WorkspaceManager(config.workspace.baseDir, logger, config.workspace.hooks);
     const sseHub = new SSEHub();
 
     const orchestrator = new Orchestrator(config, github, {
