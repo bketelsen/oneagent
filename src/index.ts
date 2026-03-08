@@ -62,8 +62,6 @@ program
     const planningRepo = new PlanningRepo(db);
     const github = new GitHubClient(token, logger);
     const workspace = new WorkspaceManager(config.workspace.baseDir, logger, config.workspace.hooks);
-    const workspace = new WorkspaceManager(config.workspace.baseDir, logger);
-    const workspace = new WorkspaceManager(config.workspace.baseDir, logger);
 
     const orchestrator = new Orchestrator(config, github, {
       config, github, runsRepo, eventsRepo, metricsRepo, workspace, logger,
