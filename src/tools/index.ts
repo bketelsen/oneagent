@@ -1,4 +1,5 @@
 export { readIssueTool, createPRTool } from "./github.js";
+export { checkCIStatusTool } from "./ci.js";
 export { createPlanningTools } from "./planning.js";
 export { createReviewTools } from "./review.js";
 export type { ReviewVerdict } from "./review.js";
