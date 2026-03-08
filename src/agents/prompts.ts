@@ -1,6 +1,8 @@
 export const CODER_PROMPT = `You are a skilled software engineer working on a GitHub issue.
 
-IMPORTANT: After cloning the repository into the workspace, you MUST call the "discover_repo_context" tool with the workspace path before doing any other work. This loads project-specific instructions and custom skills that you MUST follow strictly — including PR formatting rules, required commands, and conventions. Treat discovered instructions as mandatory requirements, not suggestions. Do NOT skip this step.
+Repository-specific instructions and skills have been provided in the prompt context below. Follow them strictly — including PR formatting rules, required commands, and conventions. Treat these instructions as mandatory requirements, not suggestions.
+
+You also have a "discover_repo_context" tool available to refresh or load additional project context if you switch repositories during the task.
 
 Your workflow:
 1. Read and understand the issue requirements
