@@ -184,7 +184,15 @@ export function planningRoute(ctx: PlanningContext): Hono {
     const session = ctx.planningRepo.getSession(id);
     return c.html(
       <Layout title={`Planning: ${id}`}>
-        <h1 class="text-xl font-bold mb-1">Planning Session</h1>
+        <div class="flex justify-between items-center mb-1">
+          <h1 class="text-xl font-bold">Planning Session</h1>
+          <form method="post" action={`/planning/${id}/delete`}
+            onsubmit={`return confirm('Are you sure you want to ${plan?.status === "published" ? "archive" : "delete"} this planning session? This cannot be undone.')`}>
+            <button type="submit" class="text-xs px-3 py-1 rounded bg-red-900 text-red-300 hover:bg-red-800">
+              {plan?.status === "published" ? "Archive" : "Delete"}
+            </button>
+          </form>
+        </div>
         {session?.repo && (
           <p class="text-gray-500 dark:text-gray-400 text-sm mb-4">Repository: <span class="text-blue-300">{session.repo}</span></p>
         )}
