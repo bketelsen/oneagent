@@ -27,6 +27,7 @@ export class WorkspaceManager {
 
   cleanup(issueKey: string): void {
     const dir = this.path(issueKey);
+    if (!existsSync(dir)) return;
     runHook(this.hooks?.teardown, dir, this.logger);
     rmSync(dir, { recursive: true, force: true });
     this.logger.info({ issueKey, dir }, "workspace cleaned up");
