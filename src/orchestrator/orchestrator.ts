@@ -21,6 +21,7 @@ import { createReviewTools, type ReviewVerdict } from "../tools/review.js";
 import { createStallDetector } from "../middleware/stall-detector.js";
 import { logHandoff } from "../middleware/logging.js";
 import { WorkspaceManager } from "../workspace/manager.js";
+import { discoverRepoContext } from "../tools/repo-context.js";
 import { ulid } from "ulid";
 import type { Logger } from "pino";
 
@@ -42,6 +43,7 @@ export class Orchestrator {
   readonly sseHub = new EventEmitter();
   readonly prMonitor: PRMonitor;
   private dispatcher = new Dispatcher();
+  private repoContextLoaded = false;
   private agentMap: Record<string, AgentDef>;
   private pollTimer?: ReturnType<typeof setInterval>;
   private reconcileTimer?: ReturnType<typeof setInterval>;
@@ -399,6 +401,12 @@ export class Orchestrator {
     });
 
     const workDir = this.deps.workspace?.ensure(issue.key);
+    if (!this.repoContextLoaded && workDir) {
+      const ctx = discoverRepoContext(workDir);
+      this.dispatcher.setRepoContext(ctx);
+      this.prMonitor.setRepoContext(ctx);
+      this.repoContextLoaded = true;
+    }
     const prompt = this.dispatcher.buildPrompt(issue, workDir);
 
     // Run agent in background — don't await

@@ -36,6 +36,10 @@ export class PRMonitor {
     this.reviewTimer = setInterval(() => this.checkReviewFeedback(), intervalMs);
   }
 
+  setRepoContext(context: string): void {
+    this.dispatcher.setRepoContext(context);
+  }
+
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     if (this.reviewTimer) clearInterval(this.reviewTimer);
