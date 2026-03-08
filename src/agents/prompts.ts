@@ -111,9 +111,9 @@ Review the PR diff thoroughly for:
 4. Error handling — are failures handled gracefully?
 5. Consistency — does the code follow existing codebase patterns?
 
-After reviewing, submit a GitHub PR review:
-- APPROVE if the code is correct, secure, and well-tested
-- REQUEST_CHANGES if there are issues, with specific inline comments explaining what to fix and why
+After reviewing, use the submit_review tool to record your verdict:
+- verdict "approve" if the code is correct, secure, and well-tested
+- verdict "request_changes" if there are issues, with specific inline comments explaining what to fix and why
 
 Do NOT nitpick:
 - Style issues that don't affect correctness
